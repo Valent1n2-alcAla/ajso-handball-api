@@ -48,13 +48,13 @@ class Rencontre
     private ?int $id = null;
 
     #[ORM\ManyToOne(inversedBy: 'rencontresDomicile')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Assert\NotNull]
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipe = null;
 
     #[ORM\ManyToOne(inversedBy: 'rencontresExterieur')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Assert\NotNull]
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipeAdverse = null;
@@ -89,6 +89,12 @@ class Rencontre
     #[Assert\PositiveOrZero]
     #[Groups(['rencontre:read'])]
     private ?int $scoreExt = null;
+
+    /** Compétition du match (renseignée par l'import ; sinon championnat principal de l'équipe) */
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(onDelete: 'SET NULL')]
+    #[Groups(['rencontre:read'])]
+    private ?Championnat $championnat = null;
 
     /** Identifiant de la rencontre sur ffhandball.fr (renseigné par l'import) */
     #[ORM\Column(length: 30, unique: true, nullable: true)]
@@ -227,6 +233,18 @@ class Rencontre
     public function setJournee(?string $journee): static
     {
         $this->journee = $journee;
+
+        return $this;
+    }
+
+    public function getChampionnat(): ?Championnat
+    {
+        return $this->championnat;
+    }
+
+    public function setChampionnat(?Championnat $championnat): static
+    {
+        $this->championnat = $championnat;
 
         return $this;
     }

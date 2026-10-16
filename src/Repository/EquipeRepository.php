@@ -23,12 +23,12 @@ class EquipeRepository extends ServiceEntityRepository
      */
     public function findImportables(): array
     {
-        return $this->createQueryBuilder('e')
-            ->join('e.championnat', 'c')
+        $equipes = $this->createQueryBuilder('e')
             ->where('e.estAjso = true')
             ->andWhere("e.nomFfhb IS NOT NULL AND e.nomFfhb <> ''")
-            ->andWhere("c.urlFfhb IS NOT NULL AND c.urlFfhb <> ''")
             ->orderBy('e.ordre', 'ASC')
             ->getQuery()->getResult();
+
+        return array_values(array_filter($equipes, fn (Equipe $e) => array_filter($e->toutesCompetitions(), fn ($c) => (bool) $c->getUrlFfhb())));
     }
 }

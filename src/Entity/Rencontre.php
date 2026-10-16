@@ -65,8 +65,8 @@ class Rencontre
     #[Groups(['rencontre:read'])]
     private ?\DateTime $date = null;
 
-    #[ORM\Column(type: Types::TIME_MUTABLE)]
-    #[Assert\NotNull]
+    /** Null tant que l'horaire n'est pas connu */
+    #[ORM\Column(type: Types::TIME_MUTABLE, nullable: true)]
     #[Context([DateTimeNormalizer::FORMAT_KEY => 'H:i'])]
     #[Groups(['rencontre:read'])]
     private ?\DateTime $heure = null;
@@ -89,6 +89,17 @@ class Rencontre
     #[Assert\PositiveOrZero]
     #[Groups(['rencontre:read'])]
     private ?int $scoreExt = null;
+
+    /** false = seul le week-end est connu : `date` porte alors le samedi du week-end */
+    #[ORM\Column(options: ['default' => true])]
+    #[Groups(['rencontre:read'])]
+    private bool $dateConfirmee = true;
+
+    /** Journée / phase de championnat (ex. « J3 », « Coupe 1er tour ») */
+    #[ORM\Column(length: 50, nullable: true)]
+    #[Assert\Length(max: 50)]
+    #[Groups(['rencontre:read'])]
+    private ?string $journee = null;
 
     public function getId(): ?int
     {
@@ -136,7 +147,7 @@ class Rencontre
         return $this->heure;
     }
 
-    public function setHeure(\DateTime $heure): static
+    public function setHeure(?\DateTime $heure): static
     {
         $this->heure = $heure;
 
@@ -187,6 +198,30 @@ class Rencontre
     public function setScoreExt(?int $scoreExt): static
     {
         $this->scoreExt = $scoreExt;
+
+        return $this;
+    }
+
+    public function isDateConfirmee(): bool
+    {
+        return $this->dateConfirmee;
+    }
+
+    public function setDateConfirmee(bool $dateConfirmee): static
+    {
+        $this->dateConfirmee = $dateConfirmee;
+
+        return $this;
+    }
+
+    public function getJournee(): ?string
+    {
+        return $this->journee;
+    }
+
+    public function setJournee(?string $journee): static
+    {
+        $this->journee = $journee;
 
         return $this;
     }

@@ -14,7 +14,8 @@ API Symfony 7.4 + API Platform 4 du site de l'AJS Ouistreham Handball.
 | Catégories, Championnats, Tranches | `/api/categories`, `/api/championnats`, `/api/tranches` | publique | admin |
 | Messages de contact | `/api/message_contacts` | admin | `POST` public |
 
-- **Matchs** : `equipe` = équipe AJSO, `equipeAdverse` = adversaire, `domicile` = l'AJSO reçoit, `scoreDom` = score de l'équipe qui reçoit.
+- **Matchs** : `dateConfirmee=false` = seul le week-end est connu (`date` = samedi), `heure` facultative, `journee` libre.
+- `equipe` = équipe AJSO, `equipeAdverse` = adversaire, `domicile` = l'AJSO reçoit, `scoreDom` = score de l'équipe qui reçoit.
 - Filtres : `?equipe=`, `?date[after]=`, `?order[date]=`, `?estAjso=true`, `?lu=false`, `?itemsPerPage=` (max 200).
 - Documentation interactive : <http://localhost:8000/api>.
 
@@ -35,6 +36,18 @@ php bin/console doctrine:fixtures:load               # données de départ (opti
 php bin/console app:create-admin president@exemple.fr   # compte admin (mot de passe demandé)
 symfony serve   # ou : php -S 127.0.0.1:8000 -t public
 ```
+
+## Importer un calendrier
+
+```bash
+php bin/console app:import-rencontres calendrier.csv --dry-run   # vérification
+php bin/console app:import-rencontres calendrier.csv
+```
+
+Modèle : [`docs/modele-calendrier.csv`](docs/modele-calendrier.csv) (séparateur `;`).
+`equipe` = nom exact d'une équipe AJSO ; adversaires créés automatiquement ;
+`date` = `AAAA-MM-JJ`, ou `WE AAAA-MM-JJ` (samedi) si seul le week-end est connu → affiché « Week-end du … » ;
+`heure` vide = « Horaire à venir ».
 
 ## Production
 

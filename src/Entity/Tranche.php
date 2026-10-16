@@ -7,24 +7,47 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
+use Symfony\Component\Serializer\Attribute\Groups;
+use Symfony\Component\Validator\Constraints as Assert;
 
-#[ApiResource]
+#[ApiResource(
+    operations: [
+        new GetCollection(),
+        new Get(),
+        new Post(security: "is_granted('ROLE_ADMIN')"),
+        new Put(security: "is_granted('ROLE_ADMIN')"),
+        new Patch(security: "is_granted('ROLE_ADMIN')"),
+        new Delete(security: "is_granted('ROLE_ADMIN')"),
+    ],
+    normalizationContext: ['groups' => ['tranche:read']],
+)]
 #[ORM\Entity(repositoryClass: TrancheRepository::class)]
 class Tranche
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['equipe:read', 'categorie:read', 'tranche:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 60)]
+    #[Assert\NotBlank]
+    #[Groups(['equipe:read', 'categorie:read', 'tranche:read'])]
     private ?string $nom = null;
 
-    #[ORM\Column]
-    private ?int $age_min = null;
+    #[ORM\Column(name: 'age_min')]
+    #[Groups(['equipe:read', 'categorie:read', 'tranche:read'])]
+    private ?int $ageMin = null;
 
-    #[ORM\Column]
-    private ?int $age_max = null;
+    #[ORM\Column(name: 'age_max')]
+    #[Groups(['equipe:read', 'categorie:read', 'tranche:read'])]
+    private ?int $ageMax = null;
 
     /**
      * @var Collection<int, Categorie>
@@ -56,24 +79,24 @@ class Tranche
 
     public function getAgeMin(): ?int
     {
-        return $this->age_min;
+        return $this->ageMin;
     }
 
-    public function setAgeMin(int $age_min): static
+    public function setAgeMin(int $ageMin): static
     {
-        $this->age_min = $age_min;
+        $this->ageMin = $ageMin;
 
         return $this;
     }
 
     public function getAgeMax(): ?int
     {
-        return $this->age_max;
+        return $this->ageMax;
     }
 
-    public function setAgeMax(int $age_max): static
+    public function setAgeMax(int $ageMax): static
     {
-        $this->age_max = $age_max;
+        $this->ageMax = $ageMax;
 
         return $this;
     }

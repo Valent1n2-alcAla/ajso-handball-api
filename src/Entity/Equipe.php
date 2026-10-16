@@ -2,28 +2,82 @@
 
 namespace App\Entity;
 
+use ApiPlatform\Doctrine\Orm\Filter\BooleanFilter;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
+use ApiPlatform\Metadata\ApiFilter;
+use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
 use App\Repository\EquipeRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
+use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
-use ApiPlatform\Metadata\ApiResource;
+use Symfony\Component\Serializer\Attribute\Groups;
+use Symfony\Component\Validator\Constraints as Assert;
 
-#[ApiResource]
+#[ApiResource(
+    operations: [
+        new GetCollection(),
+        new Get(),
+        new Post(security: "is_granted('ROLE_ADMIN')"),
+        new Put(security: "is_granted('ROLE_ADMIN')"),
+        new Patch(security: "is_granted('ROLE_ADMIN')"),
+        new Delete(security: "is_granted('ROLE_ADMIN')"),
+    ],
+    normalizationContext: ['groups' => ['equipe:read']],
+    order: ['ordre' => 'ASC', 'nom' => 'ASC'],
+)]
+#[ApiFilter(BooleanFilter::class, properties: ['estAjso'])]
+#[ApiFilter(OrderFilter::class, properties: ['nom', 'ordre'])]
 #[ORM\Entity(repositoryClass: EquipeRepository::class)]
 class Equipe
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
+    #[Assert\NotBlank]
+    #[Assert\Length(max: 100)]
+    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
     private ?string $nom = null;
 
+    /** true = équipe du club AJSO, false = adversaire */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['equipe:read', 'rencontre:read'])]
+    private bool $estAjso = false;
+
+    #[ORM\Column(length: 150, nullable: true)]
+    #[Assert\Length(max: 150)]
+    #[Groups(['equipe:read'])]
+    private ?string $entraineur = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['equipe:read'])]
+    private ?string $description = null;
+
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
+    #[Groups(['equipe:read'])]
+    private ?string $photo = null;
+
+    #[ORM\Column(options: ['default' => 0])]
+    #[Groups(['equipe:read'])]
+    private int $ordre = 0;
+
     #[ORM\ManyToOne(inversedBy: 'equipes')]
+    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
     private ?Categorie $categorie = null;
 
     #[ORM\ManyToOne(inversedBy: 'equipes')]
+    #[Groups(['equipe:read', 'rencontre:read'])]
     private ?Championnat $championnat = null;
 
     /**
@@ -57,6 +111,66 @@ class Equipe
     public function setNom(string $nom): static
     {
         $this->nom = $nom;
+
+        return $this;
+    }
+
+    public function isEstAjso(): bool
+    {
+        return $this->estAjso;
+    }
+
+    public function setEstAjso(bool $estAjso): static
+    {
+        $this->estAjso = $estAjso;
+
+        return $this;
+    }
+
+    public function getEntraineur(): ?string
+    {
+        return $this->entraineur;
+    }
+
+    public function setEntraineur(?string $entraineur): static
+    {
+        $this->entraineur = $entraineur;
+
+        return $this;
+    }
+
+    public function getDescription(): ?string
+    {
+        return $this->description;
+    }
+
+    public function setDescription(?string $description): static
+    {
+        $this->description = $description;
+
+        return $this;
+    }
+
+    public function getPhoto(): ?string
+    {
+        return $this->photo;
+    }
+
+    public function setPhoto(?string $photo): static
+    {
+        $this->photo = $photo;
+
+        return $this;
+    }
+
+    public function getOrdre(): int
+    {
+        return $this->ordre;
+    }
+
+    public function setOrdre(int $ordre): static
+    {
+        $this->ordre = $ordre;
 
         return $this;
     }

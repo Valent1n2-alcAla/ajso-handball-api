@@ -12,6 +12,11 @@ API Symfony 7.4 + API Platform 4 du site de l'AJS Ouistreham Handball.
 | Créneaux d'entraînement | `/api/creneaux` | publique | admin |
 | Gymnases, Partenaires, Tarifs, Club | `/api/gymnases`, `/api/partenaires`, `/api/tarifs`, `/api/clubs` | publique | admin |
 | Catégories, Championnats, Tranches | `/api/categories`, `/api/championnats`, `/api/tranches` | publique | admin |
+| Classements | `/api/classements` | publique | admin |
+| Galerie : albums, photos | `/api/albums`, `/api/photos` | publique | admin |
+| Agenda (événements) | `/api/evenements` | publique | admin |
+| Boutique (produits) | `/api/produits` | publique | admin |
+| Envoi d'images | `POST /api/medias` (multipart, champ `fichier`) | — | admin |
 | Messages de contact | `/api/message_contacts` | admin | `POST` public |
 
 - **Matchs** : `dateConfirmee=false` = seul le week-end est connu (`date` = samedi), `heure` facultative, `journee` libre.
@@ -58,3 +63,37 @@ Dans `.env.local` (non versionné) : `APP_ENV=prod`, `APP_SECRET`, `DATABASE_URL
 
 Les fixtures reprennent les informations publiques du club (président, gymnases, équipes 2025-2026, label).
 Matchs, créneaux, tarifs et partenaires sont **des exemples** à remplacer depuis l'espace admin du site.
+
+## Images envoyées
+
+`POST /api/medias` range les fichiers dans `public/uploads/AAAA/MM/` (JPG, PNG, WebP, GIF, 8 Mo max) et
+renvoie leur URL. Le site réduit les photos à 2000 px avant l'envoi. En production, si l'API est derrière
+un autre nom de domaine que celui vu par le serveur, définir `UPLOADS_BASE_URL` (ex. `https://api.ajso-handball.fr`).
+Vérifier aussi `upload_max_filesize` / `post_max_size` dans `php.ini` (8M / 10M ; `public/.user.ini` le fait pour PHP-FPM).
+
+## Import automatique FFHandball
+
+Récupère matchs, horaires, salles, scores et classement sur ffhandball.fr (données lues dans le HTML des pages).
+
+1. Admin du site → **Championnats** : coller l'adresse de la page de la poule
+   (`https://www.ffhandball.fr/competitions/…/poule-123456/`).
+2. Admin → **Équipes** : saisir le **nom exact** de l'équipe sur ffhandball.fr (ex. `AJS OUISTREHAM HANDBALL 2`).
+3. Lancer l'import : bouton **Import FFHandball** de l'admin, ou en ligne de commande :
+
+```bash
+php bin/console app:ffhb:import              # toutes les équipes configurées
+php bin/console app:ffhb:import --equipe=12  # une seule
+```
+
+Les matchs importés sont reconnus par leur identifiant fédéral (pas de doublon) ; les adversaires sont créés
+au besoin ; les journées closes ne sont pas relues ; une pause d'1 s sépare deux pages (`FFHB_PAUSE`).
+Seules les adresses de `FFHB_HOSTS` (par défaut `www.ffhandball.fr`) sont acceptées.
+
+**Planifier** l'import deux fois par jour :
+
+- Linux (crontab) : `0 7,23 * * * cd /chemin/ajso-handball-api && php bin/console app:ffhb:import`
+- Windows (PowerShell admin) :
+  ```powershell
+  $a = New-ScheduledTaskAction -Execute "php" -Argument "bin/console app:ffhb:import" -WorkingDirectory "D:\AjsoHandball\ajso-handball-api"
+  Register-ScheduledTask -TaskName "AJSO import FFHB" -Action $a -Trigger @((New-ScheduledTaskTrigger -Daily -At 7am), (New-ScheduledTaskTrigger -Daily -At 11pm))
+  ```

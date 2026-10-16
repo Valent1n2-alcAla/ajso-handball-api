@@ -90,6 +90,11 @@ class Rencontre
     #[Groups(['rencontre:read'])]
     private ?int $scoreExt = null;
 
+    /** Identifiant de la rencontre sur ffhandball.fr (renseigné par l'import) */
+    #[ORM\Column(length: 30, unique: true, nullable: true)]
+    #[Groups(['rencontre:read'])]
+    private ?string $ffhbId = null;
+
     /** false = seul le week-end est connu : `date` porte alors le samedi du week-end */
     #[ORM\Column(options: ['default' => true])]
     #[Groups(['rencontre:read'])]
@@ -222,6 +227,18 @@ class Rencontre
     public function setJournee(?string $journee): static
     {
         $this->journee = $journee;
+
+        return $this;
+    }
+
+    public function getFfhbId(): ?string
+    {
+        return $this->ffhbId;
+    }
+
+    public function setFfhbId(?string $ffhbId): static
+    {
+        $this->ffhbId = $ffhbId;
 
         return $this;
     }

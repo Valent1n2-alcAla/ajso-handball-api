@@ -69,17 +69,23 @@ class Club
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Assert\Url]
+    #[Assert\Url(requireTld: true)]
     private ?string $facebook = null;
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Assert\Url]
+    #[Assert\Url(requireTld: true)]
     private ?string $instagram = null;
 
     #[ORM\Column(length: 100, nullable: true)]
     #[Assert\Length(max: 100)]
     private ?string $label = null;
+
+    /** Boutique en ligne du club (HelloAsso…) */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
+    #[Assert\Url(requireTld: true)]
+    private ?string $boutiqueUrl = null;
 
     public function getId(): ?int
     {
@@ -214,6 +220,18 @@ class Club
     public function setLabel(?string $label): static
     {
         $this->label = $label;
+
+        return $this;
+    }
+
+    public function getBoutiqueUrl(): ?string
+    {
+        return $this->boutiqueUrl;
+    }
+
+    public function setBoutiqueUrl(?string $boutiqueUrl): static
+    {
+        $this->boutiqueUrl = $boutiqueUrl;
 
         return $this;
     }

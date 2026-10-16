@@ -1,7 +1,15 @@
 api_platform:
-    title: Hello API Platform
+    title: AJSO Handball API
+    description: API du site de l'AJS Ouistreham Handball (équipes, matchs, actualités, club).
     version: 1.0.0
     defaults:
         stateless: true
+        pagination_client_items_per_page: true
+        pagination_maximum_items_per_page: 200
         cache_headers:
             vary: ['Content-Type', 'Authorization', 'Origin']
+    swagger:
+        api_keys:
+            JWT:
+                name: Authorization
+                type: header

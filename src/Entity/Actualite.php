@@ -5,9 +5,29 @@ namespace App\Entity;
 use App\Repository\ActualiteRepository;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use ApiPlatform\Doctrine\Orm\Filter\OrderFilter;
+use ApiPlatform\Metadata\ApiFilter;
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\GetCollection;
+use ApiPlatform\Metadata\Patch;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
+use Symfony\Component\Validator\Constraints as Assert;
 
-#[ApiResource]
+#[ApiResource(
+    operations: [
+        new GetCollection(),
+        new Get(),
+        new Post(security: "is_granted('ROLE_ADMIN')"),
+        new Put(security: "is_granted('ROLE_ADMIN')"),
+        new Patch(security: "is_granted('ROLE_ADMIN')"),
+        new Delete(security: "is_granted('ROLE_ADMIN')"),
+    ],
+    order: ['datePub' => 'DESC'],
+)]
+#[ApiFilter(OrderFilter::class, properties: ['datePub'])]
 #[ORM\Entity(repositoryClass: ActualiteRepository::class)]
 class Actualite
 {
@@ -17,16 +37,25 @@ class Actualite
     private ?int $id = null;
 
     #[ORM\Column(length: 150)]
+    #[Assert\NotBlank]
+    #[Assert\Length(max: 150)]
     private ?string $titre = null;
 
     #[ORM\Column(type: Types::TEXT)]
+    #[Assert\NotBlank]
     private ?string $contenu = null;
 
     #[ORM\Column]
+    #[Assert\NotNull]
     private ?\DateTime $datePub = null;
 
     #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
     private ?string $image = null;
+
+    #[ORM\Column(length: 300, nullable: true)]
+    #[Assert\Length(max: 300)]
+    private ?string $extrait = null;
 
     public function getId(): ?int
     {
@@ -77,6 +106,18 @@ class Actualite
     public function setImage(?string $image): static
     {
         $this->image = $image;
+
+        return $this;
+    }
+
+    public function getExtrait(): ?string
+    {
+        return $this->extrait;
+    }
+
+    public function setExtrait(?string $extrait): static
+    {
+        $this->extrait = $extrait;
 
         return $this;
     }

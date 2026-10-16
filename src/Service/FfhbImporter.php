@@ -2,6 +2,7 @@
 
 namespace App\Service;
 
+use App\Entity\Championnat;
 use App\Entity\Classement;
 use App\Entity\Equipe;
 use App\Entity\Rencontre;
@@ -45,25 +46,95 @@ class FfhbImporter
     }
 
     /**
-     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int}
+     * Importe toutes les compétitions de l'équipe (championnat principal, phases, coupe).
+     *
+     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, ignorees: list<string>}
      */
     public function importer(Equipe $equipe): array
     {
-        $championnat = $equipe->getChampionnat();
-        $url = $championnat?->getUrlFfhb();
         $libelle = $equipe->getNomFfhb();
-        if (!$url || !$libelle) {
-            throw new \InvalidArgumentException(sprintf('« %s » : renseignez le nom FFHandball de l\'équipe et l\'URL de la poule de son championnat.', $equipe->getNom()));
-        }
-        $hote = parse_url($url, PHP_URL_HOST);
-        if (!in_array($hote, $this->hotes, true)) {
-            throw new \InvalidArgumentException(sprintf('Adresse refusée (%s) : seules les pages de %s sont acceptées.', $hote, implode(', ', $this->hotes)));
+        $competitions = array_values(array_filter($equipe->toutesCompetitions(), fn (Championnat $c) => (bool) $c->getUrlFfhb()));
+        if (!$libelle || !$competitions) {
+            throw new \InvalidArgumentException(sprintf('« %s » : renseignez le nom FFHandball de l\'équipe et l\'adresse ffhandball.fr d\'au moins une de ses compétitions.', $equipe->getNom()));
         }
 
-        $base = rtrim($url, '/').'/';
-        $nous = self::normaliser($libelle);
+        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'ignorees' => []];
         $pages = 0;
-        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0];
+        foreach ($competitions as $championnat) {
+            try {
+                $this->importerCompetition($equipe, $championnat, $stats, $pages);
+                ++$stats['competitions'];
+            } catch (\InvalidArgumentException $e) {
+                $stats['ignorees'][] = $championnat->getNom().' : '.$e->getMessage();
+            }
+        }
+        $stats['pages'] = $pages;
+        if ($stats['competitions'] === 0) {
+            throw new \InvalidArgumentException(implode(' ; ', $stats['ignorees']));
+        }
+
+        return $stats;
+    }
+
+    /**
+     * Adresse de la poule où joue l'équipe. Accepte aussi la page d'une compétition (la poule est cherchée
+     * parmi celles de la compétition, puis enregistrée) ou d'une journée (ramenée à la poule).
+     */
+    private function poule(Championnat $championnat, string $nous, int &$pages): string
+    {
+        $url = trim((string) $championnat->getUrlFfhb());
+        $hote = parse_url($url, PHP_URL_HOST);
+        if (!in_array($hote, $this->hotes, true)) {
+            throw new \InvalidArgumentException(sprintf('adresse refusée (%s) : seules les pages de %s sont acceptées.', $hote ?: $url, implode(', ', $this->hotes)));
+        }
+        if (preg_match('#^(.*?/poule-\d+)(?:/|$)#', $url, $m)) {
+            return $m[1].'/';
+        }
+
+        // Page de la compétition : on parcourt ses poules jusqu'à trouver l'équipe
+        $base = rtrim($url, '/').'/';
+        $liste = ($this->page($base, $pages)['competitions---poule-selector'] ?? [])['poules'] ?? [];
+        foreach ($liste as $p) {
+            if (empty($p['ext_pouleId'])) {
+                continue;
+            }
+            $candidat = "{$base}poule-{$p['ext_pouleId']}/";
+            $blocs = $this->page($candidat, $pages);
+            if ($this->contientEquipe($blocs, $nous)) {
+                $championnat->setUrlFfhb($candidat); // mémorisée : la recherche n'est faite qu'une fois
+
+                return $candidat;
+            }
+        }
+
+        throw new \InvalidArgumentException(count($liste)
+            ? sprintf('équipe introuvable dans les %d poules de la compétition (vérifiez le nom FFHandball).', count($liste))
+            : 'aucune poule publiée pour cette compétition pour l\'instant.');
+    }
+
+    private function contientEquipe(array $blocs, string $nous): bool
+    {
+        foreach (($blocs['competitions---mini-classement-or-ads'] ?? $blocs['competitions---classement'] ?? [])['classements'] ?? [] as $l) {
+            if (self::normaliser($l['equipe_libelle'] ?? '') === $nous) {
+                return true;
+            }
+        }
+        foreach (($blocs['competitions---rencontre-list'] ?? [])['rencontres'] ?? [] as $r) {
+            if (in_array($nous, [self::normaliser($r['equipe1Libelle'] ?? ''), self::normaliser($r['equipe2Libelle'] ?? '')], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array{crees: int, maj: int, classement: int} $stats
+     */
+    private function importerCompetition(Equipe $equipe, Championnat $championnat, array &$stats, int &$pages): void
+    {
+        $nous = self::normaliser($equipe->getNomFfhb());
+        $base = $this->poule($championnat, $nous, $pages);
 
         $poule = $this->page($base, $pages);
         $journees = $this->journees($poule);
@@ -102,7 +173,7 @@ class FfhbImporter
             $listes[(int) $courante['selected_numero_journee']] = $courante['rencontres'] ?? [];
         }
         foreach (array_keys($journees) as $n) {
-            if (isset($listes[$n]) || $this->journeeClose($equipe, $n)) {
+            if (isset($listes[$n]) || $this->journeeClose($equipe, $championnat, $n)) {
                 continue;
             }
             $listes[$n] = ($this->page("{$base}journee-$n/", $pages)['competitions---rencontre-list'] ?? [])['rencontres'] ?? [];
@@ -139,6 +210,7 @@ class FfhbImporter
                 }
 
                 $match->setEquipe($equipe)
+                    ->setChampionnat($championnat)
                     ->setEquipeAdverse($adversaire)
                     ->setDomicile($estDom)
                     ->setJournee("J$n")
@@ -155,22 +227,19 @@ class FfhbImporter
         }
         $this->em->flush();
 
-        $this->completerSalles($equipe, $base, $pages);
+        $this->completerSalles($equipe, $championnat, $base, $pages);
         $this->em->flush();
-
-        $stats['pages'] = $pages;
-
-        return $stats;
     }
 
     /** Gymnase des prochains matchs dont le lieu est inconnu, lu sur la page de la rencontre. */
-    private function completerSalles(Equipe $equipe, string $base, int &$pages): void
+    private function completerSalles(Equipe $equipe, Championnat $championnat, string $base, int &$pages): void
     {
         $prochains = $this->rencontres->createQueryBuilder('r')
-            ->where('r.equipe = :e')->andWhere('r.ffhbId IS NOT NULL')->andWhere('r.scoreDom IS NULL')
+            ->where('r.equipe = :e')->andWhere('r.championnat = :c')->andWhere('r.ffhbId IS NOT NULL')->andWhere('r.scoreDom IS NULL')
             ->andWhere('r.lieu = :inconnu')->andWhere('r.date >= :auj')
             ->setParameters(new \Doctrine\Common\Collections\ArrayCollection([
                 new \Doctrine\ORM\Query\Parameter('e', $equipe),
+                new \Doctrine\ORM\Query\Parameter('c', $championnat),
                 new \Doctrine\ORM\Query\Parameter('inconnu', self::LIEU_INCONNU),
                 new \Doctrine\ORM\Query\Parameter('auj', new \DateTime('today')),
             ]))
@@ -188,9 +257,9 @@ class FfhbImporter
     }
 
     /** Une journée est close quand tous nos matchs de cette journée sont passés et ont un score. */
-    private function journeeClose(Equipe $equipe, int $n): bool
+    private function journeeClose(Equipe $equipe, Championnat $championnat, int $n): bool
     {
-        $matchs = $this->rencontres->findBy(['equipe' => $equipe, 'journee' => "J$n"]);
+        $matchs = $this->rencontres->findBy(['equipe' => $equipe, 'championnat' => $championnat, 'journee' => "J$n"]);
         if (!$matchs) {
             return false;
         }

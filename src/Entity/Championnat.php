@@ -45,6 +45,12 @@ class Championnat
     #[Groups(['equipe:read', 'rencontre:read', 'championnat:read', 'classement:read'])]
     private ?string $niveau = null;
 
+    /** championnat | phase-1 | phase-2 | coupe */
+    #[ORM\Column(length: 20, options: ['default' => 'championnat'])]
+    #[Assert\Choice(choices: ['championnat', 'phase-1', 'phase-2', 'coupe'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read', 'classement:read'])]
+    private string $type = 'championnat';
+
     /** Page de la poule sur ffhandball.fr, pour l'import automatique des matchs et du classement */
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
@@ -88,6 +94,18 @@ class Championnat
     public function setNiveau(string $niveau): static
     {
         $this->niveau = $niveau;
+
+        return $this;
+    }
+
+    public function getType(): string
+    {
+        return $this->type;
+    }
+
+    public function setType(string $type): static
+    {
+        $this->type = $type;
 
         return $this;
     }

@@ -77,7 +77,9 @@ Vérifier aussi `upload_max_filesize` / `post_max_size` dans `php.ini` (8M / 10M
 Récupère matchs, horaires, salles, scores et classement sur ffhandball.fr (données lues dans le HTML des pages).
 
 1. Admin du site → **Championnats** : coller l'adresse de la page de la poule
-   (`https://www.ffhandball.fr/competitions/…/poule-123456/`).
+   (`https://www.ffhandball.fr/competitions/…/poule-123456/`). L'adresse de la compétition seule suffit :
+   la poule de l'équipe est alors cherchée parmi ses poules au premier import, puis mémorisée.
+   Une équipe peut avoir plusieurs compétitions (championnat, phase 1, phase 2, coupe) : toutes sont importées.
 2. Admin → **Équipes** : saisir le **nom exact** de l'équipe sur ffhandball.fr (ex. `AJS OUISTREHAM HANDBALL 2`).
 3. Lancer l'import : bouton **Import FFHandball** de l'admin, ou en ligne de commande :
 
@@ -104,3 +106,17 @@ Seules les adresses de `FFHB_HOSTS` (par défaut `www.ffhandball.fr`) sont accep
 Le nom de famille d'un joueur n'est jamais publié tel quel : l'API expose `nomAffiche`, complet pour les
 équipes dont la tranche d'âge commence à 18 ans, réduit à l'initiale (« Léa M. ») pour les jeunes.
 Le nom complet n'est lisible que par l'admin (`/api/admin/joueurs`).
+
+## Équipes de la saison (tableau)
+
+Le tableau du club (`docs/equipes-2026-2027.csv`, une ligne par compétition) crée ou met à jour équipes,
+catégories, compétitions, ententes, entraîneurs, salles et créneaux :
+
+```bash
+php bin/console app:import-equipes docs/equipes-2026-2027.csv --dry-run   # vérification
+php bin/console app:import-equipes docs/equipes-2026-2027.csv
+```
+
+Colonnes : `Équipe;Catégorie;Nom FFHB;Compétition;Type;Adresse poule;Entente;Entraîneur;Créneaux`.
+Créneaux : `Lundi 21h-22h Cosec / Mardi 20h30-22h Kieffer`. Relancer met à jour sans doublon.
+Les fixtures (`doctrine:fixtures:load`) chargent ce tableau.

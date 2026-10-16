@@ -72,6 +72,22 @@ class Equipe
     #[Groups(['equipe:read'])]
     private int $ordre = 0;
 
+    /** Club(s) partenaire(s) quand l'équipe joue en entente (ex. « Douvres ») */
+    #[ORM\Column(length: 100, nullable: true)]
+    #[Assert\Length(max: 100)]
+    #[Groups(['equipe:read'])]
+    private ?string $entente = null;
+
+    /**
+     * Autres compétitions disputées (phases, coupe) en plus du championnat principal.
+     *
+     * @var Collection<int, Championnat>
+     */
+    #[ORM\ManyToMany(targetEntity: Championnat::class)]
+    #[ORM\JoinTable(name: 'equipe_competition')]
+    #[Groups(['equipe:read'])]
+    private Collection $competitions;
+
     /** Libellé exact de l'équipe sur ffhandball.fr (ex. « AJS OUISTREHAM HANDBALL 2 ») */
     #[ORM\Column(length: 150, nullable: true)]
     #[Assert\Length(max: 150)]
@@ -102,6 +118,7 @@ class Equipe
     {
         $this->rencontresDomicile = new ArrayCollection();
         $this->rencontresExterieur = new ArrayCollection();
+        $this->competitions = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -179,6 +196,59 @@ class Equipe
         $this->ordre = $ordre;
 
         return $this;
+    }
+
+    public function getEntente(): ?string
+    {
+        return $this->entente;
+    }
+
+    public function setEntente(?string $entente): static
+    {
+        $this->entente = $entente;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Championnat>
+     */
+    public function getCompetitions(): Collection
+    {
+        return $this->competitions;
+    }
+
+    public function addCompetition(Championnat $competition): static
+    {
+        if (!$this->competitions->contains($competition)) {
+            $this->competitions->add($competition);
+        }
+
+        return $this;
+    }
+
+    public function removeCompetition(Championnat $competition): static
+    {
+        $this->competitions->removeElement($competition);
+
+        return $this;
+    }
+
+    /**
+     * Championnat principal + autres compétitions, sans doublon.
+     *
+     * @return list<Championnat>
+     */
+    public function toutesCompetitions(): array
+    {
+        $liste = $this->championnat ? [$this->championnat] : [];
+        foreach ($this->competitions as $c) {
+            if (!in_array($c, $liste, true)) {
+                $liste[] = $c;
+            }
+        }
+
+        return $liste;
     }
 
     public function getNomFfhb(): ?string

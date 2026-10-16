@@ -40,13 +40,13 @@ class Equipe
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read', 'joueur:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
     #[Assert\NotBlank]
     #[Assert\Length(max: 100)]
-    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'creneau:read', 'joueur:read'])]
     private ?string $nom = null;
 
     /** true = équipe du club AJSO, false = adversaire */

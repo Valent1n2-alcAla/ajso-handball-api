@@ -10,6 +10,7 @@ use App\Entity\Creneau;
 use App\Entity\Equipe;
 use App\Entity\Evenement;
 use App\Entity\Gymnase;
+use App\Entity\Joueur;
 use App\Entity\Partenaire;
 use App\Entity\Produit;
 use App\Entity\Rencontre;
@@ -170,6 +171,20 @@ class AppFixtures extends Fixture
             ['Gourde AJSO', 8.5, null, 'Gourde inox 50 cl.'],
         ] as $i => [$nom, $prix, $tailles, $desc]) {
             $manager->persist((new Produit())->setNom($nom)->setPrix($prix)->setTailles($tailles)->setDescription($desc)->setOrdre($i));
+        }
+
+        // Effectifs d'exemple (noms fictifs)
+        foreach ([
+            'Seniors M1' => [[1, 'Thomas', 'Lefèvre', 'gardien'], [16, 'Hugo', 'Marie', 'gardien'], [7, 'Maxime', 'Duval', 'ailier-gauche'],
+                [9, 'Julien', 'Hébert', 'arriere-gauche', true], [11, 'Antoine', 'Lebrun', 'demi-centre'], [13, 'Nicolas', 'Guérin', 'pivot'],
+                [21, 'Romain', 'Lecomte', 'arriere-droit'], [5, 'Kévin', 'Morel', 'ailier-droit'], [24, 'Florian', 'Roussel', 'polyvalent']],
+            '-15 ans F' => [[1, 'Léa', 'Martin', 'gardien'], [4, 'Chloé', 'Bernard', 'demi-centre', true], [8, 'Inès', 'Petit', 'pivot'],
+                [10, 'Manon', 'Durand', 'arriere-gauche'], [14, 'Jade', 'Leroy', 'ailier-droit']],
+        ] as $eq => $liste) {
+            foreach ($liste as $j) {
+                $manager->persist((new Joueur())->setEquipe($equipes[$eq])->setNumero($j[0])->setPrenom($j[1])->setNom($j[2])
+                    ->setPoste($j[3])->setCapitaine($j[4] ?? false));
+            }
         }
 
         $manager->flush();

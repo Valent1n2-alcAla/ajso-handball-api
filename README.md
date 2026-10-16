@@ -12,6 +12,7 @@ API Symfony 7.4 + API Platform 4 du site de l'AJS Ouistreham Handball.
 | Créneaux d'entraînement | `/api/creneaux` | publique | admin |
 | Gymnases, Partenaires, Tarifs, Club | `/api/gymnases`, `/api/partenaires`, `/api/tarifs`, `/api/clubs` | publique | admin |
 | Catégories, Championnats, Tranches | `/api/categories`, `/api/championnats`, `/api/tranches` | publique | admin |
+| Effectifs (joueurs) | `/api/joueurs` (public) · `/api/admin/joueurs` (nom complet) | publique | admin |
 | Classements | `/api/classements` | publique | admin |
 | Galerie : albums, photos | `/api/albums`, `/api/photos` | publique | admin |
 | Agenda (événements) | `/api/evenements` | publique | admin |
@@ -97,3 +98,9 @@ Seules les adresses de `FFHB_HOSTS` (par défaut `www.ffhandball.fr`) sont accep
   $a = New-ScheduledTaskAction -Execute "php" -Argument "bin/console app:ffhb:import" -WorkingDirectory "D:\AjsoHandball\ajso-handball-api"
   Register-ScheduledTask -TaskName "AJSO import FFHB" -Action $a -Trigger @((New-ScheduledTaskTrigger -Daily -At 7am), (New-ScheduledTaskTrigger -Daily -At 11pm))
   ```
+
+## Effectifs et vie privée
+
+Le nom de famille d'un joueur n'est jamais publié tel quel : l'API expose `nomAffiche`, complet pour les
+équipes dont la tranche d'âge commence à 18 ans, réduit à l'initiale (« Léa M. ») pour les jeunes.
+Le nom complet n'est lisible que par l'admin (`/api/admin/joueurs`).

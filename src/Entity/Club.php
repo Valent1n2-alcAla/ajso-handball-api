@@ -69,12 +69,12 @@ class Club
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Assert\Url]
+    #[Assert\Url(requireTld: true)]
     private ?string $facebook = null;
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Assert\Url]
+    #[Assert\Url(requireTld: true)]
     private ?string $instagram = null;
 
     #[ORM\Column(length: 100, nullable: true)]

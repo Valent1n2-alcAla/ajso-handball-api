@@ -44,7 +44,7 @@ class Partenaire
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Assert\Url]
+    #[Assert\Url(requireTld: true)]
     private ?string $url = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
@@ -52,7 +52,7 @@ class Partenaire
 
     /** principal | officiel | partenaire */
     #[ORM\Column(length: 30, options: ['default' => 'partenaire'])]
-    #[Assert\Choice(['principal', 'officiel', 'partenaire'])]
+    #[Assert\Choice(choices: ['principal', 'officiel', 'partenaire'])]
     private string $niveau = 'partenaire';
 
     #[ORM\Column(options: ['default' => 0])]

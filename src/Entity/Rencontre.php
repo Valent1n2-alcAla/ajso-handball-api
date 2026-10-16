@@ -48,13 +48,13 @@ class Rencontre
     private ?int $id = null;
 
     #[ORM\ManyToOne(inversedBy: 'rencontresDomicile')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Assert\NotNull]
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipe = null;
 
     #[ORM\ManyToOne(inversedBy: 'rencontresExterieur')]
-    #[ORM\JoinColumn(nullable: false)]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Assert\NotNull]
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipeAdverse = null;

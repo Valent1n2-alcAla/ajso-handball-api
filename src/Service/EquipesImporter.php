@@ -25,12 +25,12 @@ class EquipesImporter
     private const JOURS = ['lundi' => 1, 'mardi' => 2, 'mercredi' => 3, 'jeudi' => 4, 'vendredi' => 5, 'samedi' => 6, 'dimanche' => 7];
     private const TYPES = ['championnat' => 'championnat', 'phase 1' => 'phase-1', 'phase 2' => 'phase-2', 'coupe' => 'coupe'];
 
-    /** Noms usuels des salles → nom officiel (et adresse quand elle est connue) */
+    /** Noms usuels des salles → [nom officiel, adresse, code postal, ville] */
     private const SALLES = [
-        'cosec' => ['COSEC Maurice Chevalier', 'Avenue du Général Leclerc'],
-        'kieffer' => ['Salle Stade Kieffer', '85 avenue du Général Leclerc'],
-        'halle' => ['Halle des Sports', null],
-        'maitrise' => ['Salle de la Maîtrise', null],
+        'cosec' => ['COSEC Maurice Chevalier', 'Avenue du Général Leclerc', '14150', 'Ouistreham'],
+        'kieffer' => ['Salle Stade Kieffer', '85 avenue du Général Leclerc', '14150', 'Ouistreham'],
+        'halle' => ['Halle des Sports', 'Rue les Petites Rues', '14880', 'Colleville-Montgomery'],
+        'maitrise' => ['Salle de la Maîtrise', '21 place de la Basilique', '14440', 'Douvres-la-Délivrande'],
     ];
 
     /** @var array<string, object> */
@@ -218,17 +218,24 @@ class EquipesImporter
     private function gymnase(string $salle): Gymnase
     {
         $cle = self::cle($salle);
-        [$nom, $adresse] = [$salle, null];
+        $connue = null;
         foreach (self::SALLES as $motCle => $officiel) {
             if (str_contains($cle, $motCle)) {
-                [$nom, $adresse] = $officiel;
+                $connue = $officiel;
                 break;
             }
         }
+        $nom = $connue[0] ?? $salle;
 
-        return $this->cache['g:'.mb_strtolower($nom)] ??= $this->em->getRepository(Gymnase::class)->findOneBy(['nom' => $nom])
-            ?? self::tap((new Gymnase())->setNom($nom)->setAdresse($adresse ?? 'Adresse à préciser')->setCodePostal('14150')->setVille('Ouistreham'),
-                fn ($g) => $this->em->persist($g));
+        return $this->cache['g:'.mb_strtolower($nom)] ??= self::tap(
+            $this->em->getRepository(Gymnase::class)->findOneBy(['nom' => $nom]) ?? (new Gymnase())->setNom($nom)->setAdresse('Adresse à préciser'),
+            function (Gymnase $g) use ($connue) {
+                if ($connue) { // adresse connue du club : toujours à jour
+                    $g->setAdresse($connue[1])->setCodePostal($connue[2])->setVille($connue[3]);
+                }
+                $this->em->persist($g);
+            },
+        );
     }
 
     /** « Oui ( Douvres) » → « Douvres » ; « Non » → null */

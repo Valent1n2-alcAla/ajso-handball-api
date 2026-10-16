@@ -16,28 +16,19 @@ class EquipeRepository extends ServiceEntityRepository
         parent::__construct($registry, Equipe::class);
     }
 
-    //    /**
-    //     * @return Equipe[] Returns an array of Equipe objects
-    //     */
-    //    public function findByExampleField($value): array
-    //    {
-    //        return $this->createQueryBuilder('e')
-    //            ->andWhere('e.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->orderBy('e.id', 'ASC')
-    //            ->setMaxResults(10)
-    //            ->getQuery()
-    //            ->getResult()
-    //        ;
-    //    }
-
-    //    public function findOneBySomeField($value): ?Equipe
-    //    {
-    //        return $this->createQueryBuilder('e')
-    //            ->andWhere('e.exampleField = :val')
-    //            ->setParameter('val', $value)
-    //            ->getQuery()
-    //            ->getOneOrNullResult()
-    //        ;
-    //    }
+    /**
+     * Équipes du club configurées pour l'import FFHandball.
+     *
+     * @return list<Equipe>
+     */
+    public function findImportables(): array
+    {
+        return $this->createQueryBuilder('e')
+            ->join('e.championnat', 'c')
+            ->where('e.estAjso = true')
+            ->andWhere("e.nomFfhb IS NOT NULL AND e.nomFfhb <> ''")
+            ->andWhere("c.urlFfhb IS NOT NULL AND c.urlFfhb <> ''")
+            ->orderBy('e.ordre', 'ASC')
+            ->getQuery()->getResult();
+    }
 }

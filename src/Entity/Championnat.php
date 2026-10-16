@@ -33,17 +33,24 @@ class Championnat
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read', 'classement:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 100)]
     #[Assert\NotBlank]
-    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read', 'classement:read'])]
     private ?string $nom = null;
 
     #[ORM\Column(length: 50)]
-    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read'])]
+    #[Groups(['equipe:read', 'rencontre:read', 'championnat:read', 'classement:read'])]
     private ?string $niveau = null;
+
+    /** Page de la poule sur ffhandball.fr, pour l'import automatique des matchs et du classement */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
+    #[Assert\Url(requireTld: true)]
+    #[Groups(['championnat:read', 'equipe:read'])]
+    private ?string $urlFfhb = null;
 
     /**
      * @var Collection<int, Equipe>
@@ -81,6 +88,18 @@ class Championnat
     public function setNiveau(string $niveau): static
     {
         $this->niveau = $niveau;
+
+        return $this;
+    }
+
+    public function getUrlFfhb(): ?string
+    {
+        return $this->urlFfhb;
+    }
+
+    public function setUrlFfhb(?string $urlFfhb): static
+    {
+        $this->urlFfhb = $urlFfhb;
 
         return $this;
     }

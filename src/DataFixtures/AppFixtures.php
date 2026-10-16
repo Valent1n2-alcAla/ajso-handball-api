@@ -8,8 +8,10 @@ use App\Entity\Championnat;
 use App\Entity\Club;
 use App\Entity\Creneau;
 use App\Entity\Equipe;
+use App\Entity\Evenement;
 use App\Entity\Gymnase;
 use App\Entity\Partenaire;
+use App\Entity\Produit;
 use App\Entity\Rencontre;
 use App\Entity\Tarif;
 use App\Entity\Tranche;
@@ -151,6 +153,23 @@ class AppFixtures extends Fixture
             ['Tournoi Baby Hand', "Nos plus jeunes licenciés ont participé à leur premier plateau de la saison. Bravo à tous !", '-35 days'],
         ] as [$titre, $contenu, $quand]) {
             $manager->persist((new Actualite())->setTitre($titre)->setContenu($contenu)->setExtrait($contenu)->setDatePub(new \DateTime($quand)));
+        }
+
+        foreach ([
+            ['Tournoi de Noël des jeunes', 'tournoi', '2026-12-13 09:00', '2026-12-13 17:00', 'COSEC Maurice Chevalier', "Plateaux -9 à -13 ans, buvette et tombola au profit de l'école de hand."],
+            ['Stage des vacances de février', 'stage', '2027-02-15 10:00', '2027-02-17 16:00', 'COSEC Maurice Chevalier', 'Trois jours de hand et de jeux pour les -11 et -13 ans.'],
+            ['Assemblée générale', 'assemblee', '2027-06-20 18:30', null, 'Salle des fêtes de Ouistreham', 'Bilan de la saison et élection du bureau.'],
+        ] as [$titre, $type, $debut, $fin, $lieu, $desc]) {
+            $manager->persist((new Evenement())->setTitre($titre)->setType($type)->setDebut(new \DateTime($debut))
+                ->setFin($fin ? new \DateTime($fin) : null)->setLieu($lieu)->setDescription($desc));
+        }
+
+        foreach ([
+            ['Maillot domicile AJSO', 35.0, 'XS à XXL', 'Le maillot officiel des Ratons, floqué au dos sur demande.'],
+            ['Sweat à capuche club', 30.0, '6 ans à XXL', 'Sweat bleu nuit, logo raton brodé.'],
+            ['Gourde AJSO', 8.5, null, 'Gourde inox 50 cl.'],
+        ] as $i => [$nom, $prix, $tailles, $desc]) {
+            $manager->persist((new Produit())->setNom($nom)->setPrix($prix)->setTailles($tailles)->setDescription($desc)->setOrdre($i));
         }
 
         $manager->flush();

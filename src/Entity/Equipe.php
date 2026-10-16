@@ -72,6 +72,12 @@ class Equipe
     #[Groups(['equipe:read'])]
     private int $ordre = 0;
 
+    /** Libellé exact de l'équipe sur ffhandball.fr (ex. « AJS OUISTREHAM HANDBALL 2 ») */
+    #[ORM\Column(length: 150, nullable: true)]
+    #[Assert\Length(max: 150)]
+    #[Groups(['equipe:read'])]
+    private ?string $nomFfhb = null;
+
     #[ORM\ManyToOne(inversedBy: 'equipes')]
     #[Groups(['equipe:read', 'rencontre:read', 'creneau:read'])]
     private ?Categorie $categorie = null;
@@ -171,6 +177,18 @@ class Equipe
     public function setOrdre(int $ordre): static
     {
         $this->ordre = $ordre;
+
+        return $this;
+    }
+
+    public function getNomFfhb(): ?string
+    {
+        return $this->nomFfhb;
+    }
+
+    public function setNomFfhb(?string $nomFfhb): static
+    {
+        $this->nomFfhb = $nomFfhb;
 
         return $this;
     }

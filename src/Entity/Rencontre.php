@@ -96,6 +96,10 @@ class Rencontre
     #[Groups(['rencontre:read'])]
     private ?Championnat $championnat = null;
 
+    /** Code de la feuille de match FDME (PDF publié après le match) */
+    #[ORM\Column(length: 20, nullable: true)]
+    private ?string $fdmCode = null;
+
     /** Identifiant de la rencontre sur ffhandball.fr (renseigné par l'import) */
     #[ORM\Column(length: 30, unique: true, nullable: true)]
     #[Groups(['rencontre:read'])]
@@ -245,6 +249,18 @@ class Rencontre
     public function setChampionnat(?Championnat $championnat): static
     {
         $this->championnat = $championnat;
+
+        return $this;
+    }
+
+    public function getFdmCode(): ?string
+    {
+        return $this->fdmCode;
+    }
+
+    public function setFdmCode(?string $fdmCode): static
+    {
+        $this->fdmCode = $fdmCode;
 
         return $this;
     }

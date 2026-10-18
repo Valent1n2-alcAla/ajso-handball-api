@@ -88,6 +88,10 @@ php bin/console app:ffhb:import              # toutes les équipes configurées
 php bin/console app:ffhb:import --equipe=12  # une seule
 ```
 
+Pour chaque match joué, la **feuille de match** (PDF FDME) est ensuite téléchargée et lue : joueurs de notre
+équipe, numéros, buts, buts sur 7 m, tirs, arrêts, exclusions et cartons (25 feuilles au plus par passage ;
+les numéros de licence ne sont jamais conservés). Les joueurs sont créés automatiquement.
+
 Les matchs importés sont reconnus par leur identifiant fédéral (pas de doublon) ; les adversaires sont créés
 au besoin ; les journées closes ne sont pas relues ; une pause d'1 s sépare deux pages (`FFHB_PAUSE`).
 Seules les adresses de `FFHB_HOSTS` (par défaut `www.ffhandball.fr`) sont acceptées.

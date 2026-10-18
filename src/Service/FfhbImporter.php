@@ -5,6 +5,7 @@ namespace App\Service;
 use App\Entity\Championnat;
 use App\Entity\Classement;
 use App\Entity\Equipe;
+use App\Entity\Participation;
 use App\Entity\Rencontre;
 use App\Repository\ClassementRepository;
 use App\Repository\EquipeRepository;
@@ -29,8 +30,12 @@ class FfhbImporter
     private const LIEU_INCONNU = 'À définir';
     private const SALLES_PAR_IMPORT = 4;
 
+    private const FEUILLES_PAR_IMPORT = 25;
+
     /** @var list<string> */
     private array $hotes;
+
+    private int $feuillesLues = 0;
 
     /** Dossier où enregistrer les pages lues (mode diagnostic) */
     private ?string $dossierDebug = null;
@@ -46,9 +51,13 @@ class FfhbImporter
         private readonly EquipeRepository $equipes,
         private readonly RencontreRepository $rencontres,
         private readonly ClassementRepository $classements,
+        private readonly FeuilleMatchLecteur $feuilles,
+        private readonly CompositionsImporter $compositions,
         #[Autowire('%env(FFHB_HOSTS)%')] string $hotes,
         /** Pause entre deux pages (secondes) : rester léger avec le site de la fédération */
         #[Autowire('%env(float:FFHB_PAUSE)%')] private readonly float $pause = 1.0,
+        /** Serveur des feuilles de match FDME */
+        #[Autowire('%env(FFHB_FEUILLES_URL)%')] private readonly string $urlFeuilles = 'https://fdm.fdme.ffhandball.fr/',
     ) {
         $this->hotes = array_filter(array_map('trim', explode(',', $hotes)));
     }
@@ -56,7 +65,7 @@ class FfhbImporter
     /**
      * Importe toutes les compétitions de l'équipe (championnat principal, phases, coupe).
      *
-     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, ignorees: list<string>, infos: list<string>}
+     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, feuilles: int, joueurs: int, ignorees: list<string>, infos: list<string>}
      */
     public function importer(Equipe $equipe): array
     {
@@ -66,7 +75,7 @@ class FfhbImporter
             throw new \InvalidArgumentException(sprintf('« %s » : renseignez le nom FFHandball de l\'équipe et l\'adresse ffhandball.fr d\'au moins une de ses compétitions.', $equipe->getNom()));
         }
 
-        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'ignorees' => [], 'infos' => []];
+        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'feuilles' => 0, 'joueurs' => 0, 'ignorees' => [], 'infos' => []];
         $pages = 0;
         foreach ($competitions as $championnat) {
             try {
@@ -285,6 +294,7 @@ class FfhbImporter
                     ->setEquipeAdverse($adversaire)
                     ->setDomicile($estDom)
                     ->setJournee("J$n")
+                    ->setFdmCode(preg_match('/^[A-Z0-9]{5,}$/i', (string) ($r['fdmCode'] ?? '')) ? strtoupper($r['fdmCode']) : $match->getFdmCode())
                     ->setScoreDom(self::score($r['equipe1Score'] ?? null))
                     ->setScoreExt(self::score($r['equipe2Score'] ?? null));
                 if ($match->getLieu() === self::LIEU_INCONNU && (!$estDom || $match->getDate() < new \DateTime('today'))) {
@@ -307,6 +317,80 @@ class FfhbImporter
 
         $this->completerSalles($equipe, $championnat, $base, $pages);
         $this->em->flush();
+
+        $this->lireFeuilles($equipe, $championnat, $stats);
+        $this->em->flush();
+    }
+
+    /**
+     * Feuilles de match des rencontres jouées pas encore lues : joueurs, buts, tirs, arrêts, sanctions.
+     * Le serveur des feuilles limite le nombre de téléchargements : au plus FEUILLES_PAR_IMPORT par passage.
+     */
+    private function lireFeuilles(Equipe $equipe, Championnat $championnat, array &$stats): void
+    {
+        $aLire = $this->rencontres->createQueryBuilder('r')
+            ->where('r.equipe = :e')->andWhere('r.championnat = :c')
+            ->andWhere('r.fdmCode IS NOT NULL')->andWhere('r.scoreDom IS NOT NULL')
+            ->andWhere('NOT EXISTS (SELECT p.id FROM '.Participation::class.' p WHERE p.rencontre = r)')
+            ->setParameter('e', $equipe)->setParameter('c', $championnat)
+            ->orderBy('r.date', 'ASC')->getQuery()->getResult();
+
+        foreach ($aLire as $match) {
+            if ($this->feuillesLues >= self::FEUILLES_PAR_IMPORT) {
+                $stats['infos'][] = 'Feuilles de match : limite atteinte pour ce passage, la suite au prochain import.';
+
+                return;
+            }
+            $code = $match->getFdmCode();
+            $url = rtrim($this->urlFeuilles, '/').'/'.implode('/', str_split(substr($code, 0, 4))).'/'.$code.'.pdf';
+            try {
+                usleep((int) ($this->pause * 1_000_000));
+                ++$this->feuillesLues;
+                $reponse = $this->http->request('GET', $url, ['timeout' => 30, 'headers' => ['User-Agent' => 'ajso-handball-site/1.0']]);
+                $statut = $reponse->getStatusCode();
+                if ($statut === 404) {
+                    continue; // feuille pas encore publiée
+                }
+                if ($statut === 429) {
+                    $stats['infos'][] = 'Feuilles de match : le serveur demande de ralentir, la suite au prochain import.';
+                    $this->feuillesLues = self::FEUILLES_PAR_IMPORT;
+
+                    return;
+                }
+                $pdf = $reponse->getContent();
+                if ($this->dossierDebug) {
+                    @mkdir($this->dossierDebug, 0777, true);
+                    file_put_contents("{$this->dossierDebug}/feuille-{$code}.pdf", $pdf);
+                }
+                $feuille = $this->feuilles->lire($pdf);
+            } catch (\Throwable $e) {
+                $stats['infos'][] = sprintf('Feuille %s (%s) illisible : %s', $code, $match->getDate()?->format('d/m'), $e->getMessage());
+                continue;
+            }
+
+            $nos = $feuille[$match->isDomicile() ? 'recevant' : 'visiteur'];
+            if (!$nos) {
+                $stats['infos'][] = sprintf('Feuille %s : aucun joueur lu', $code);
+                continue;
+            }
+            $total = 0;
+            foreach ($nos as $l) {
+                [$joueur, $nouveau] = $this->compositions->trouverJoueur($equipe, $l['prenom'], $l['nom']);
+                $stats['joueurs'] += (int) $nouveau;
+                $joueur->setNumero($l['numero']);
+                $this->em->persist((new Participation())->setRencontre($match)->setJoueur($joueur)
+                    ->setNumero($l['numero'])->setButs($l['buts'])->setButs7m($l['buts7m'])->setTirs($l['tirs'])
+                    ->setArrets($l['arrets'])->setExclusions($l['exclusions'])
+                    ->setAvertissement($l['avertissement'])->setDisqualification($l['disqualification']));
+                $total += $l['buts'];
+            }
+            ++$stats['feuilles'];
+            $score = $match->isDomicile() ? $match->getScoreDom() : $match->getScoreExt();
+            if ($score !== null && $score !== $total) {
+                $stats['infos'][] = sprintf('Feuille %s : %d buts lus pour %d au score, à vérifier', $code, $total, $score);
+            }
+            $this->em->flush();
+        }
     }
 
     /** Gymnase des prochains matchs dont le lieu est inconnu, lu sur la page de la rencontre. */

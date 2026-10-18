@@ -56,8 +56,8 @@ class ImportFfhbCommand extends Command
         foreach ($liste as $equipe) {
             try {
                 $r = $this->importer->importer($equipe);
-                $io->writeln(sprintf('<info>✔ %s</info> : %d compétition(s), %d match(s) créé(s), %d mis à jour, classements %d lignes (%d pages lues)',
-                    $r['equipe'], $r['competitions'], $r['crees'], $r['maj'], $r['classement'], $r['pages']));
+                $io->writeln(sprintf('<info>✔ %s</info> : %d compétition(s), %d match(s) créé(s), %d mis à jour, classements %d lignes, %d feuille(s) de match lue(s), %d nouveau(x) joueur(s) (%d pages)',
+                    $r['equipe'], $r['competitions'], $r['crees'], $r['maj'], $r['classement'], $r['feuilles'], $r['joueurs'], $r['pages']));
                 foreach ($r['infos'] as $info) {
                     $io->writeln("  <info>ℹ $info</info>");
                 }

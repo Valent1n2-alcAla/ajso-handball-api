@@ -119,6 +119,17 @@ class CompositionsImporter
     private function joueur(Equipe $equipe, string $nomComplet): array
     {
         [$prenom, $nom] = self::decouper($nomComplet);
+
+        return $this->trouverJoueur($equipe, $prenom, $nom);
+    }
+
+    /**
+     * Joueur de l'équipe portant ce nom (casse et accents ignorés), créé s'il n'existe pas encore.
+     *
+     * @return array{0: Joueur, 1: bool} joueur et « nouvellement créé »
+     */
+    public function trouverJoueur(Equipe $equipe, string $prenom, string $nom): array
+    {
         $cle = $equipe->getId().'|'.self::cle("$prenom $nom");
         if (isset($this->joueurs[$cle])) {
             return [$this->joueurs[$cle], false];

@@ -61,6 +61,36 @@ class Participation
     #[Groups(['participation:read'])]
     private int $buts = 0;
 
+    /** Buts sur jet de 7 m (compris dans buts) */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Groups(['participation:read'])]
+    private int $buts7m = 0;
+
+    /** Tirs, buts compris */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Groups(['participation:read'])]
+    private int $tirs = 0;
+
+    /** Arrêts (gardiens) */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Groups(['participation:read'])]
+    private int $arrets = 0;
+
+    /** Exclusions de 2 minutes */
+    #[ORM\Column(options: ['default' => 0])]
+    #[Groups(['participation:read'])]
+    private int $exclusions = 0;
+
+    /** Carton jaune */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['participation:read'])]
+    private bool $avertissement = false;
+
+    /** Carton rouge */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['participation:read'])]
+    private bool $disqualification = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -110,6 +140,78 @@ class Participation
     public function setButs(int $buts): static
     {
         $this->buts = $buts;
+
+        return $this;
+    }
+
+    public function getButs7m(): int
+    {
+        return $this->buts7m;
+    }
+
+    public function setButs7m(int $buts7m): static
+    {
+        $this->buts7m = $buts7m;
+
+        return $this;
+    }
+
+    public function getTirs(): int
+    {
+        return $this->tirs;
+    }
+
+    public function setTirs(int $tirs): static
+    {
+        $this->tirs = $tirs;
+
+        return $this;
+    }
+
+    public function getArrets(): int
+    {
+        return $this->arrets;
+    }
+
+    public function setArrets(int $arrets): static
+    {
+        $this->arrets = $arrets;
+
+        return $this;
+    }
+
+    public function getExclusions(): int
+    {
+        return $this->exclusions;
+    }
+
+    public function setExclusions(int $exclusions): static
+    {
+        $this->exclusions = $exclusions;
+
+        return $this;
+    }
+
+    public function isAvertissement(): bool
+    {
+        return $this->avertissement;
+    }
+
+    public function setAvertissement(bool $avertissement): static
+    {
+        $this->avertissement = $avertissement;
+
+        return $this;
+    }
+
+    public function isDisqualification(): bool
+    {
+        return $this->disqualification;
+    }
+
+    public function setDisqualification(bool $disqualification): static
+    {
+        $this->disqualification = $disqualification;
 
         return $this;
     }

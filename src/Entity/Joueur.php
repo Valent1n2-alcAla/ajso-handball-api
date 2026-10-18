@@ -38,19 +38,19 @@ class Joueur
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?int $id = null;
 
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     #[Assert\NotNull]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?Equipe $equipe = null;
 
     #[ORM\Column(length: 80)]
     #[Assert\NotBlank]
     #[Assert\Length(max: 80)]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?string $prenom = null;
 
     /** Jamais publié tel quel : voir getNomAffiche() */
@@ -62,21 +62,21 @@ class Joueur
 
     #[ORM\Column(nullable: true)]
     #[Assert\Range(min: 0, max: 99)]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?int $numero = null;
 
     #[ORM\Column(length: 30, nullable: true)]
     #[Assert\Choice(choices: ['gardien', 'ailier-gauche', 'arriere-gauche', 'demi-centre', 'pivot', 'arriere-droit', 'ailier-droit', 'polyvalent'])]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?string $poste = null;
 
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private ?string $photo = null;
 
     #[ORM\Column(options: ['default' => false])]
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     private bool $capitaine = false;
 
     public function getId(): ?int
@@ -171,7 +171,7 @@ class Joueur
     /**
      * Nom publié : complet en catégorie adultes, « Prénom N. » pour les jeunes (protection des mineurs).
      */
-    #[Groups(['joueur:read'])]
+    #[Groups(['joueur:read', 'participation:read'])]
     public function getNomAffiche(): string
     {
         $adulte = ($this->equipe?->getCategorie()?->getTranche()?->getAgeMin() ?? 0) >= 18;

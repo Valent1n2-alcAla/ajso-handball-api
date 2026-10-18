@@ -120,3 +120,16 @@ php bin/console app:import-equipes docs/equipes-2026-2027.csv
 Colonnes : `Équipe;Catégorie;Nom FFHB;Compétition;Type;Adresse poule;Entente;Entraîneur;Créneaux`.
 Créneaux : `Lundi 21h-22h Cosec / Mardi 20h30-22h Kieffer`. Relancer met à jour sans doublon.
 Les fixtures (`doctrine:fixtures:load`) chargent ce tableau.
+
+## Compositions de match et statistiques joueurs
+
+`docs/compositions-2026-2027.csv` (une ligne par joueur et par match) crée les joueurs et enregistre
+les compositions et les buts ; la fiche équipe affiche alors meilleurs buteurs, matchs joués et moyennes.
+
+```bash
+php bin/console app:import-compositions docs/compositions-2026-2027.csv
+```
+
+Colonnes : `Équipe;Match;Adversaire;N°;Joueur;Buts` — Match = journée (`J3`) ou date, Adversaire facultatif
+(aide à retrouver le match). Les compositions se rattachent aux matchs importés de ffhandball.fr : lancer
+`app:ffhb:import` avant. Le total des buts est comparé au score officiel. Relancer ne crée pas de doublon.

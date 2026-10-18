@@ -8,6 +8,7 @@ use App\Entity\Evenement;
 use App\Entity\Partenaire;
 use App\Entity\Produit;
 use App\Entity\Tarif;
+use App\Service\CompositionsImporter;
 use App\Service\EquipesImporter;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
@@ -19,8 +20,10 @@ use Doctrine\Persistence\ObjectManager;
  */
 class AppFixtures extends Fixture
 {
-    public function __construct(private readonly EquipesImporter $equipes)
-    {
+    public function __construct(
+        private readonly EquipesImporter $equipes,
+        private readonly CompositionsImporter $compositions,
+    ) {
     }
 
     public function load(ObjectManager $manager): void
@@ -40,6 +43,10 @@ class AppFixtures extends Fixture
         foreach ($resultat['avertissements'] as $a) {
             echo "  ! $a\n";
         }
+        $manager->flush();
+
+        // Joueurs des compositions de match (rattachées aux matchs après l'import FFHB : app:import-compositions)
+        $this->compositions->importer(__DIR__.'/../../docs/compositions-2026-2027.csv');
 
         foreach ([
             ['Baby Hand', '2021 – 2022', 90], ['Premiers Pas / -9 ans', '2018 – 2020', 110],

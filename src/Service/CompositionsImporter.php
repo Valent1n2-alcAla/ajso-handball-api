@@ -46,6 +46,13 @@ class CompositionsImporter
             }
             $rencontre = $this->rencontre($equipe, $premiere['match'], $premiere['adversaire']);
             $libelleMatch = $premiere['match'].($premiere['adversaire'] !== '' ? " contre {$premiere['adversaire']}" : '');
+            if ($rencontre?->isFeuilleLue()) {
+                $res['avertissements'][] = "{$equipe->getNom()} — {$libelleMatch} : feuille de match officielle déjà lue, composition ignorée.";
+                foreach ($lignes as $l) {
+                    $res['joueurs'] += (int) $this->joueur($equipe, $l['joueur'])[1];
+                }
+                continue;
+            }
             if (!$rencontre) {
                 $res['avertissements'][] = "{$equipe->getNom()} — {$libelleMatch} : match introuvable (lancez l'import FFHandball puis relancez cette commande). Joueurs créés quand même.";
             } else {

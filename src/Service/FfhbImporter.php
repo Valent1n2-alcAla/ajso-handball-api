@@ -331,7 +331,7 @@ class FfhbImporter
         $aLire = $this->rencontres->createQueryBuilder('r')
             ->where('r.equipe = :e')->andWhere('r.championnat = :c')
             ->andWhere('r.fdmCode IS NOT NULL')->andWhere('r.scoreDom IS NOT NULL')
-            ->andWhere('NOT EXISTS (SELECT p.id FROM '.Participation::class.' p WHERE p.rencontre = r)')
+            ->andWhere('r.feuilleLue = false')
             ->setParameter('e', $equipe)->setParameter('c', $championnat)
             ->orderBy('r.date', 'ASC')->getQuery()->getResult();
 
@@ -381,6 +381,11 @@ class FfhbImporter
                 $stats['infos'][] = sprintf('Feuille %s : aucun joueur lu', $code);
                 continue;
             }
+            // La feuille officielle remplace une composition saisie à la main
+            foreach ($this->em->getRepository(Participation::class)->findBy(['rencontre' => $match]) as $ancienne) {
+                $this->em->remove($ancienne);
+            }
+            $this->em->flush();
             $total = 0;
             foreach ($nos as $l) {
                 [$joueur, $nouveau] = $this->compositions->trouverJoueur($equipe, $l['prenom'], $l['nom']);
@@ -392,6 +397,7 @@ class FfhbImporter
                     ->setAvertissement($l['avertissement'])->setDisqualification($l['disqualification']));
                 $total += $l['buts'];
             }
+            $match->setFeuilleLue(true);
             ++$stats['feuilles'];
             $score = $match->isDomicile() ? $match->getScoreDom() : $match->getScoreExt();
             if ($score !== null && $score !== $total) {

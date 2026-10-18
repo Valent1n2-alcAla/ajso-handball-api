@@ -100,6 +100,10 @@ class Rencontre
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $fdmCode = null;
 
+    /** Feuille de match lue : compositions et statistiques officielles enregistrées */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $feuilleLue = false;
+
     /** Identifiant de la rencontre sur ffhandball.fr (renseigné par l'import) */
     #[ORM\Column(length: 30, unique: true, nullable: true)]
     #[Groups(['rencontre:read'])]
@@ -261,6 +265,18 @@ class Rencontre
     public function setFdmCode(?string $fdmCode): static
     {
         $this->fdmCode = $fdmCode;
+
+        return $this;
+    }
+
+    public function isFeuilleLue(): bool
+    {
+        return $this->feuilleLue;
+    }
+
+    public function setFeuilleLue(bool $feuilleLue): static
+    {
+        $this->feuilleLue = $feuilleLue;
 
         return $this;
     }

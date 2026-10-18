@@ -92,6 +92,9 @@ Pour chaque match joué, la **feuille de match** (PDF FDME) est ensuite téléch
 équipe, numéros, buts, buts sur 7 m, tirs, arrêts, exclusions et cartons (25 feuilles au plus par passage ;
 les numéros de licence ne sont jamais conservés). Les joueurs sont créés automatiquement.
 
+Si le code de la feuille manque dans la liste des matchs, il est cherché sur la page du match.
+`php bin/console app:ffhb:etat` affiche, par équipe : matchs joués, feuilles disponibles et lues, joueurs, statistiques.
+
 Les matchs importés sont reconnus par leur identifiant fédéral (pas de doublon) ; les adversaires sont créés
 au besoin ; les journées closes ne sont pas relues ; une pause d'1 s sépare deux pages (`FFHB_PAUSE`).
 Seules les adresses de `FFHB_HOSTS` (par défaut `www.ffhandball.fr`) sont acceptées.

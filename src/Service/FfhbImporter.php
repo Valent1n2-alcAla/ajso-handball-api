@@ -37,6 +37,11 @@ class FfhbImporter
 
     private int $feuillesLues = 0;
 
+    private const CODES_PAR_IMPORT = 15;
+
+    /** HTML de la dernière page lue (recherche du code de feuille) */
+    private string $dernierHtml = '';
+
     /** Dossier où enregistrer les pages lues (mode diagnostic) */
     private ?string $dossierDebug = null;
 
@@ -318,6 +323,8 @@ class FfhbImporter
         $this->completerSalles($equipe, $championnat, $base, $pages);
         $this->em->flush();
 
+        $this->completerCodes($equipe, $championnat, $base, $pages);
+        $this->em->flush();
         $this->lireFeuilles($equipe, $championnat, $stats);
         $this->em->flush();
     }
@@ -442,6 +449,57 @@ class FfhbImporter
         }
     }
 
+    /**
+     * Code de feuille de match absent de la liste des rencontres : on le cherche sur la page du match
+     * (données de la page ou lien vers le PDF).
+     */
+    private function completerCodes(Equipe $equipe, Championnat $championnat, string $base, int &$pages): void
+    {
+        $sansCode = $this->rencontres->createQueryBuilder('r')
+            ->where('r.equipe = :e')->andWhere('r.championnat = :c')->andWhere('r.ffhbId IS NOT NULL')
+            ->andWhere('r.scoreDom IS NOT NULL')->andWhere('r.fdmCode IS NULL')->andWhere('r.feuilleLue = false')
+            ->setParameter('e', $equipe)->setParameter('c', $championnat)
+            ->orderBy('r.date', 'ASC')->setMaxResults(self::CODES_PAR_IMPORT)
+            ->getQuery()->getResult();
+
+        foreach ($sansCode as $match) {
+            $blocs = $this->page("{$base}rencontre-{$match->getFfhbId()}/", $pages);
+            $code = self::chercherCode($blocs) ?? self::codeDansHtml($this->dernierHtml);
+            if ($code) {
+                $match->setFdmCode($code);
+            }
+        }
+    }
+
+    /** Valeur d'une clé « fdm… » dans les données de la page, à n'importe quelle profondeur. */
+    private static function chercherCode(mixed $donnees): ?string
+    {
+        if (!is_array($donnees)) {
+            return null;
+        }
+        foreach ($donnees as $cle => $valeur) {
+            if (is_string($cle) && stripos($cle, 'fdm') !== false && is_scalar($valeur) && preg_match('/^[A-Z0-9]{5,12}$/i', (string) $valeur)) {
+                return strtoupper((string) $valeur);
+            }
+            if (is_array($valeur) && ($trouve = self::chercherCode($valeur))) {
+                return $trouve;
+            }
+        }
+
+        return null;
+    }
+
+    private static function codeDansHtml(string $html): ?string
+    {
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        if (preg_match('#fdm\.fdme\.ffhandball\.fr/(?:[A-Z0-9]/){4}([A-Z0-9]{5,12})\.pdf#i', $html, $m)
+            || preg_match('#fdm_?code["\']?\s*[:=]\s*["\']([A-Z0-9]{5,12})["\']#i', $html, $m)) {
+            return strtoupper($m[1]);
+        }
+
+        return null;
+    }
+
     /** Une journée est close quand tous nos matchs de cette journée sont passés et ont un score. */
     private function journeeClose(Equipe $equipe, Championnat $championnat, int $n): bool
     {
@@ -502,6 +560,7 @@ class FfhbImporter
             'timeout' => 30,
         ])->getContent();
 
+        $this->dernierHtml = $html;
         if ($this->dossierDebug) {
             @mkdir($this->dossierDebug, 0777, true);
             file_put_contents(sprintf('%s/%03d-%s.html', $this->dossierDebug, $pages, trim(preg_replace('/[^a-z0-9]+/i', '-', parse_url($url, PHP_URL_PATH) ?? ''), '-')), $html);

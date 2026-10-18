@@ -72,6 +72,13 @@ class FeuilleMatchLecteur
             }
         }
 
+        if (!array_filter($equipes)) {
+            // Diagnostic : début du texte de la page (licences masquées) pour adapter la lecture
+            $texte = preg_replace('/\d{6,}/', '######', $pages[0]->getText());
+            $texte = trim(preg_replace('/\s+/u', ' ', $texte));
+            throw new \RuntimeException(sprintf('tableau des joueurs non reconnu (%d en-tête(s) trouvée(s)). Début de la feuille : « %s »', count($equipes), mb_substr($texte, 0, 400)));
+        }
+
         return ['recevant' => $equipes[0] ?? [], 'visiteur' => $equipes[1] ?? []];
     }
 

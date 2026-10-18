@@ -335,6 +335,14 @@ class FfhbImporter
             ->setParameter('e', $equipe)->setParameter('c', $championnat)
             ->orderBy('r.date', 'ASC')->getQuery()->getResult();
 
+        $sansCode = (int) $this->rencontres->createQueryBuilder('r')->select('COUNT(r.id)')
+            ->where('r.equipe = :e')->andWhere('r.championnat = :c')
+            ->andWhere('r.fdmCode IS NULL')->andWhere('r.scoreDom IS NOT NULL')
+            ->setParameter('e', $equipe)->setParameter('c', $championnat)->getQuery()->getSingleScalarResult();
+        if ($sansCode > 0) {
+            $stats['infos'][] = sprintf('%d match(s) joué(s) sans code de feuille de match publié par la FFHB', $sansCode);
+        }
+
         foreach ($aLire as $match) {
             if ($this->feuillesLues >= self::FEUILLES_PAR_IMPORT) {
                 $stats['infos'][] = 'Feuilles de match : limite atteinte pour ce passage, la suite au prochain import.';

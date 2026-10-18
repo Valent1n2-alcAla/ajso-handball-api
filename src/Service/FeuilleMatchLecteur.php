@@ -55,19 +55,33 @@ class FeuilleMatchLecteur
 
         $equipes = [];
         $colonnes = null;
+        $apresOfficiels = false;
         foreach ($lignes as $cases) {
             usort($cases, fn ($a, $b) => $a['x'] <=> $b['x']);
             $entete = $this->entete($cases);
             if ($entete) {
                 $colonnes = $entete;
-                $equipes[] = [];
+                if (!$equipes || end($equipes)) {
+                    $equipes[] = []; // nouvelle équipe (sauf si déjà ouverte par la ligne « Officiel »)
+                }
+                $apresOfficiels = false;
                 continue;
             }
             if ($colonnes === null) {
                 continue;
             }
+            // Les lignes « Officiel … » ferment le tableau d'une équipe : des joueurs après elles
+            // appartiennent à l'équipe suivante, même si sa ligne de titres n'a pas été reconnue.
+            if (preg_match('/^officiel/iu', $cases[0]['t'] ?? '') || preg_grep('/^officiel\s+resp/iu', array_column($cases, 't'))) {
+                $apresOfficiels = true;
+                continue;
+            }
             $joueur = $this->joueur($cases, $colonnes);
             if ($joueur) {
+                if ($apresOfficiels && end($equipes)) {
+                    $equipes[] = [];
+                }
+                $apresOfficiels = false;
                 $equipes[count($equipes) - 1][] = $joueur;
             }
         }
@@ -99,7 +113,8 @@ class FeuilleMatchLecteur
             }
         }
 
-        return isset($cols['buts'], $cols['nom']) ? $cols : null;
+        // titres reconnus : Buts + (NOM ou Licence ou Tirs) — la cellule « NOM Prénom » peut être coupée sur deux lignes
+        return isset($cols['buts']) && (isset($cols['nom']) || isset($cols['licence']) || isset($cols['tirs'])) ? $cols + ['nom' => ($cols['numero'] ?? 0) + 20] : null;
     }
 
     /**

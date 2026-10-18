@@ -32,6 +32,14 @@ class FfhbImporter
     /** @var list<string> */
     private array $hotes;
 
+    /** Dossier où enregistrer les pages lues (mode diagnostic) */
+    private ?string $dossierDebug = null;
+
+    public function activerDebug(string $dossier): void
+    {
+        $this->dossierDebug = rtrim($dossier, '/\\');
+    }
+
     public function __construct(
         private readonly HttpClientInterface $http,
         private readonly EntityManagerInterface $em,
@@ -48,7 +56,7 @@ class FfhbImporter
     /**
      * Importe toutes les compétitions de l'équipe (championnat principal, phases, coupe).
      *
-     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, ignorees: list<string>}
+     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, ignorees: list<string>, infos: list<string>}
      */
     public function importer(Equipe $equipe): array
     {
@@ -58,7 +66,7 @@ class FfhbImporter
             throw new \InvalidArgumentException(sprintf('« %s » : renseignez le nom FFHandball de l\'équipe et l\'adresse ffhandball.fr d\'au moins une de ses compétitions.', $equipe->getNom()));
         }
 
-        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'ignorees' => []];
+        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'ignorees' => [], 'infos' => []];
         $pages = 0;
         foreach ($competitions as $championnat) {
             try {
@@ -94,13 +102,15 @@ class FfhbImporter
         // Page de la compétition : on parcourt ses poules jusqu'à trouver l'équipe
         $base = rtrim($url, '/').'/';
         $liste = ($this->page($base, $pages)['competitions---poule-selector'] ?? [])['poules'] ?? [];
+        $vus = [];
         foreach ($liste as $p) {
             if (empty($p['ext_pouleId'])) {
                 continue;
             }
             $candidat = "{$base}poule-{$p['ext_pouleId']}/";
-            $blocs = $this->page($candidat, $pages);
-            if ($this->contientEquipe($blocs, $nous)) {
+            $noms = self::libelles($this->page($candidat, $pages));
+            $vus = array_merge($vus, $noms);
+            if (self::resoudreNom($noms, $nous) !== null) {
                 $championnat->setUrlFfhb($candidat); // mémorisée : la recherche n'est faite qu'une fois
 
                 return $candidat;
@@ -108,24 +118,70 @@ class FfhbImporter
         }
 
         throw new \InvalidArgumentException(count($liste)
-            ? sprintf('équipe introuvable dans les %d poules de la compétition (vérifiez le nom FFHandball).', count($liste))
+            ? sprintf('« %s » introuvable dans les %d poule(s) de la compétition. Équipes présentes : %s', $nous, count($liste), self::apercu($vus))
             : 'aucune poule publiée pour cette compétition pour l\'instant.');
     }
 
-    private function contientEquipe(array $blocs, string $nous): bool
+    /** Libellés d'équipes présents sur une page (classement et rencontres). @return list<string> */
+    private static function libelles(array $blocs): array
     {
+        $noms = [];
         foreach (($blocs['competitions---mini-classement-or-ads'] ?? $blocs['competitions---classement'] ?? [])['classements'] ?? [] as $l) {
-            if (self::normaliser($l['equipe_libelle'] ?? '') === $nous) {
-                return true;
-            }
+            $noms[] = self::nettoyer($l['equipe_libelle'] ?? '');
         }
         foreach (($blocs['competitions---rencontre-list'] ?? [])['rencontres'] ?? [] as $r) {
-            if (in_array($nous, [self::normaliser($r['equipe1Libelle'] ?? ''), self::normaliser($r['equipe2Libelle'] ?? '')], true)) {
-                return true;
-            }
+            $noms[] = self::nettoyer($r['equipe1Libelle'] ?? '');
+            $noms[] = self::nettoyer($r['equipe2Libelle'] ?? '');
         }
 
-        return false;
+        return array_values(array_unique(array_filter($noms)));
+    }
+
+    /**
+     * Retrouve le libellé fédéral de l'équipe parmi ceux d'une poule : égalité (casse, accents, ponctuation
+     * ignorés), sinon mêmes mots significatifs (« AJS OUISTREHAM HANDBALL » ≈ « OUISTREHAM AJS HB »,
+     * « ENT. COTE DE NACRE » ≈ « ENTENTE COTE DE NACRE 1 ») quand un seul libellé correspond.
+     *
+     * @param list<string> $libelles
+     *
+     * @return string|null libellé normalisé trouvé
+     */
+    private static function resoudreNom(array $libelles, string $nous): ?string
+    {
+        $normes = array_values(array_unique(array_map(fn ($l) => self::normaliser($l), $libelles)));
+        if (in_array($nous, $normes, true)) {
+            return $nous;
+        }
+        $notres = self::jetons($nous);
+        if (!$notres) {
+            return null;
+        }
+        $candidats = array_values(array_filter($normes, function (string $n) use ($notres) {
+            $siens = self::jetons($n);
+            $communs = array_intersect($notres, $siens);
+
+            return $siens && (count($communs) === count($notres) || count($communs) === count($siens));
+        }));
+
+        return count($candidats) === 1 ? $candidats[0] : null;
+    }
+
+    /** Mots significatifs d'un libellé (sans « HANDBALL », « HB », « ENTENTE »…, ni numéro d'équipe). @return list<string> */
+    private static function jetons(string $libelle): array
+    {
+        $vides = ['HANDBALL', 'HAND', 'BALL', 'HB', 'HBC', 'CLUB', 'ENT', 'ENTENTE', 'ASSOCIATION', 'DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'ET', 'L', 'D'];
+        $mots = preg_split('/[^A-Z0-9]+/', self::normaliser($libelle), -1, PREG_SPLIT_NO_EMPTY);
+
+        return array_values(array_unique(array_filter($mots, fn ($m) => !in_array($m, $vides, true) && !preg_match('/^\d{1,2}$/', $m))));
+    }
+
+    /** @param list<string> $noms */
+    private static function apercu(array $noms): string
+    {
+        $noms = array_values(array_unique($noms));
+        sort($noms);
+
+        return $noms ? implode(' | ', array_slice($noms, 0, 40)).(count($noms) > 40 ? ' …' : '') : '(aucune)';
     }
 
     /**
@@ -138,6 +194,33 @@ class FfhbImporter
 
         $poule = $this->page($base, $pages);
         $journees = $this->journees($poule);
+
+        // Rencontres : la journée affichée sur la page de la poule, puis les journées pas encore closes
+        $listes = [];
+        $courante = $poule['competitions---rencontre-list'] ?? [];
+        if (ctype_digit((string) ($courante['selected_numero_journee'] ?? ''))) {
+            $listes[(int) $courante['selected_numero_journee']] = $courante['rencontres'] ?? [];
+        }
+        foreach (array_keys($journees) as $n) {
+            if (isset($listes[$n]) || $this->journeeClose($equipe, $championnat, $n)) {
+                continue;
+            }
+            $listes[$n] = ($this->page("{$base}journee-$n/", $pages)['competitions---rencontre-list'] ?? [])['rencontres'] ?? [];
+        }
+
+        // Libellé réel de l'équipe dans cette poule
+        $noms = self::libelles($poule);
+        foreach ($listes as $rencontres) {
+            $noms = array_merge($noms, self::libelles(['competitions---rencontre-list' => ['rencontres' => $rencontres]]));
+        }
+        $saisi = $nous;
+        $nous = self::resoudreNom($noms, $saisi);
+        if ($nous === null) {
+            throw new \InvalidArgumentException(sprintf('« %s » introuvable dans la poule. Équipes présentes : %s', $saisi, self::apercu($noms)));
+        }
+        if ($nous !== $saisi) {
+            $stats['infos'][] = sprintf('%s : nom reconnu sur ffhandball.fr « %s »', $championnat->getNom(), $nous);
+        }
 
         // Classement officiel : remplacé en bloc
         $lignes = ($poule['competitions---mini-classement-or-ads'] ?? $poule['competitions---classement'] ?? [])['classements'] ?? [];
@@ -166,20 +249,8 @@ class FfhbImporter
             }
         }
 
-        // Rencontres : la journée affichée sur la page de la poule, puis les journées pas encore closes
-        $listes = [];
-        $courante = $poule['competitions---rencontre-list'] ?? [];
-        if (ctype_digit((string) ($courante['selected_numero_journee'] ?? ''))) {
-            $listes[(int) $courante['selected_numero_journee']] = $courante['rencontres'] ?? [];
-        }
-        foreach (array_keys($journees) as $n) {
-            if (isset($listes[$n]) || $this->journeeClose($equipe, $championnat, $n)) {
-                continue;
-            }
-            $listes[$n] = ($this->page("{$base}journee-$n/", $pages)['competitions---rencontre-list'] ?? [])['rencontres'] ?? [];
-        }
-
         $adversaires = [];
+        $avant = $stats['crees'] + $stats['maj'];
         foreach ($listes as $n => $rencontres) {
             foreach ($rencontres as $r) {
                 $dom = self::nettoyer($r['equipe1Libelle'] ?? '');
@@ -226,6 +297,13 @@ class FfhbImporter
             }
         }
         $this->em->flush();
+
+        if ($stats['crees'] + $stats['maj'] === $avant) {
+            $lues = array_merge(...array_values($listes) ?: [[]]);
+            $stats['infos'][] = sprintf('%s : aucun match de « %s » parmi %d rencontres lues sur %d journée(s)%s',
+                $championnat->getNom(), $nous, count($lues), count($listes),
+                $lues ? ' (champs : '.implode(', ', array_keys((array) $lues[0])).')' : '');
+        }
 
         $this->completerSalles($equipe, $championnat, $base, $pages);
         $this->em->flush();
@@ -315,6 +393,11 @@ class FfhbImporter
             'timeout' => 30,
         ])->getContent();
 
+        if ($this->dossierDebug) {
+            @mkdir($this->dossierDebug, 0777, true);
+            file_put_contents(sprintf('%s/%03d-%s.html', $this->dossierDebug, $pages, trim(preg_replace('/[^a-z0-9]+/i', '-', parse_url($url, PHP_URL_PATH) ?? ''), '-')), $html);
+        }
+
         $blocs = [];
         preg_match_all(self::BLOC, $html, $m, PREG_SET_ORDER);
         foreach ($m as [, , $nom, $attributs]) {
@@ -350,11 +433,13 @@ class FfhbImporter
         return trim(preg_replace('/\s+/u', ' ', (string) $s));
     }
 
-    /** Comparaison de libellés insensible à la casse, aux accents et aux espaces. */
+    /** Comparaison de libellés insensible à la casse, aux accents, à la ponctuation et aux espaces. */
     public static function normaliser(?string $s): string
     {
         $s = mb_strtoupper(self::nettoyer($s));
+        $s = preg_replace('/\p{Mn}/u', '', \Normalizer::normalize($s, \Normalizer::FORM_D) ?: $s); // accents
+        $s = preg_replace('/[^A-Z0-9]+/', ' ', $s); // ponctuation : « ENT. » = « ENT »
 
-        return strtr(\Normalizer::normalize($s, \Normalizer::FORM_D) ?: $s, ["\u{0301}" => '', "\u{0300}" => '', "\u{0302}" => '', "\u{0308}" => '', "\u{0327}" => '']);
+        return trim($s);
     }
 }

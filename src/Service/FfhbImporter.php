@@ -376,7 +376,15 @@ class FfhbImporter
                 continue;
             }
 
-            $nos = $feuille[$match->isDomicile() ? 'recevant' : 'visiteur'];
+            $score = $match->isDomicile() ? $match->getScoreDom() : $match->getScoreExt();
+            $cote = $match->isDomicile() ? 'recevant' : 'visiteur';
+            $autre = $cote === 'recevant' ? 'visiteur' : 'recevant';
+            $somme = fn (array $js) => array_sum(array_column($js, 'buts'));
+            // Feuille où l'ordre des équipes diffère : le total des buts désigne notre côté
+            if ($score !== null && $somme($feuille[$cote]) !== $score && $feuille[$autre] && $somme($feuille[$autre]) === $score) {
+                $cote = $autre;
+            }
+            $nos = $feuille[$cote];
             if (!$nos) {
                 $stats['infos'][] = sprintf('Feuille %s : aucun joueur lu', $code);
                 continue;
@@ -390,6 +398,9 @@ class FfhbImporter
             foreach ($nos as $l) {
                 [$joueur, $nouveau] = $this->compositions->trouverJoueur($equipe, $l['prenom'], $l['nom']);
                 $stats['joueurs'] += (int) $nouveau;
+                if ($nouveau) {
+                    $joueur->setCreeParFeuille(true);
+                }
                 $joueur->setNumero($l['numero']);
                 $this->em->persist((new Participation())->setRencontre($match)->setJoueur($joueur)
                     ->setNumero($l['numero'])->setButs($l['buts'])->setButs7m($l['buts7m'])->setTirs($l['tirs'])
@@ -399,7 +410,6 @@ class FfhbImporter
             }
             $match->setFeuilleLue(true);
             ++$stats['feuilles'];
-            $score = $match->isDomicile() ? $match->getScoreDom() : $match->getScoreExt();
             if ($score !== null && $score !== $total) {
                 $stats['infos'][] = sprintf('Feuille %s : %d buts lus pour %d au score, à vérifier', $code, $total, $score);
             }
@@ -440,7 +450,8 @@ class FfhbImporter
             return false;
         }
         foreach ($matchs as $m) {
-            if ($m->getScoreDom() === null || $m->getDate() >= new \DateTime('today')) {
+            // close = joué, passé, et feuille de match connue (sinon on relit la journée pour récupérer son code)
+            if ($m->getScoreDom() === null || $m->getDate() >= new \DateTime('today') || (!$m->getFdmCode() && !$m->isFeuilleLue())) {
                 return false;
             }
         }

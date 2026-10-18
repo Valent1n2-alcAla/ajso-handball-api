@@ -79,6 +79,22 @@ class Joueur
     #[Groups(['joueur:read', 'participation:read'])]
     private bool $capitaine = false;
 
+    /** Créé automatiquement depuis une feuille de match (peut être retiré s'il n'a plus aucun match) */
+    #[ORM\Column(options: ['default' => false])]
+    private bool $creeParFeuille = false;
+
+    public function isCreeParFeuille(): bool
+    {
+        return $this->creeParFeuille;
+    }
+
+    public function setCreeParFeuille(bool $creeParFeuille): static
+    {
+        $this->creeParFeuille = $creeParFeuille;
+
+        return $this;
+    }
+
     public function getId(): ?int
     {
         return $this->id;

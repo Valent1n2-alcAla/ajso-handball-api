@@ -26,6 +26,9 @@ class FeuilleMatchLecteur
      */
     public function lire(string $pdf): array
     {
+        if (PdfDechiffreur::estChiffre($pdf)) {
+            $pdf = PdfDechiffreur::dechiffrer($pdf); // feuilles FDME protégées (sans mot de passe d'ouverture)
+        }
         $pages = (new Parser())->parseContent($pdf)->getPages();
         if (!$pages) {
             throw new \RuntimeException('Feuille de match vide.');

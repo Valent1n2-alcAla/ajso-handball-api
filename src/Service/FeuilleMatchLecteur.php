@@ -86,8 +86,12 @@ class FeuilleMatchLecteur
     private function entete(array $cases): ?array
     {
         $cols = [];
-        foreach ($cases as $c) {
+        foreach ($cases as $i => $c) {
             $t = mb_strtoupper($c['t']);
+            // « 7m » peut être écrit en deux morceaux (« 7 » puis « m »)
+            if ($t === '7' && mb_strtoupper($cases[$i + 1]['t'] ?? '') === 'M' && $cases[$i + 1]['x'] - $c['x'] < 12) {
+                $t = '7M';
+            }
             foreach (self::COLONNES as $champ => $libelles) {
                 if (!isset($cols[$champ]) && (in_array($t, $libelles, true) || ($champ === 'nom' && str_starts_with($t, 'NOM')))) {
                     $cols[$champ] = $c['x'];
@@ -98,27 +102,47 @@ class FeuilleMatchLecteur
         return isset($cols['buts'], $cols['nom']) ? $cols : null;
     }
 
-    /** @param array<string, float> $colonnes */
+    /**
+     * Ligne joueur. N° et nom sont lus avant la colonne Licence (le titre « NOM Prénom » est centré alors que
+     * les noms sont alignés à gauche) ; chaque statistique va à la colonne dont le titre est le plus proche
+     * (valeurs centrées sous leur titre). Les numéros de licence sont ignorés.
+     *
+     * @param array<string, float> $colonnes
+     */
     private function joueur(array $cases, array $colonnes): ?array
     {
-        asort($colonnes);
+        $stats = array_intersect_key($colonnes, array_flip(['buts', 'buts7m', 'tirs', 'arrets', 'avertissement', 'exclusions', 'disqualification']));
+        $limiteIdentite = ($colonnes['licence'] ?? ($colonnes['buts'] - 60)) - 15;
+        $debutStats = min($stats) - 15;
+
+        $numero = null;
+        $nom = null;
         $valeurs = [];
         foreach ($cases as $c) {
-            // colonne = la dernière dont l'abscisse est à gauche de la case (cases alignées à gauche ou centrées)
-            $champ = null;
-            foreach ($colonnes as $nom => $x) {
-                if ($c['x'] + 4 >= $x) {
-                    $champ = $nom;
-                }
+            $t = trim($c['t']);
+            if ($t === '' || preg_match('/^\d{6,}$/', $t)) {
+                continue; // licence
             }
-            if ($champ !== null && !isset($valeurs[$champ])) {
-                $valeurs[$champ] = $c['t'];
+            if ($c['x'] < $limiteIdentite) {
+                if ($numero === null && preg_match('/^\d{1,2}$/', $t)) {
+                    $numero = (int) $t;
+                } elseif ($nom === null && preg_match('/\p{L}.*\p{L}/u', $t)) {
+                    $nom = $t;
+                }
+                continue;
+            }
+            if ($c['x'] >= $debutStats) {
+                $plusProche = null;
+                foreach ($stats as $champ => $x) {
+                    if ($plusProche === null || abs($c['x'] - $x) < abs($c['x'] - $stats[$plusProche])) {
+                        $plusProche = $champ;
+                    }
+                }
+                $valeurs[$plusProche] ??= $t;
             }
         }
-        $numero = $valeurs['numero'] ?? '';
-        $nom = trim($valeurs['nom'] ?? '');
-        if (!preg_match('/^\d{1,2}$/', $numero) || $nom === '' || preg_match('/^\d+$/', $nom)) {
-            return null; // officiels, lignes de score…
+        if ($numero === null || $nom === null) {
+            return null; // officiels, lignes vides, score…
         }
         [$prenom, $nomFamille] = self::decouper($nom);
 
@@ -126,7 +150,7 @@ class FeuilleMatchLecteur
         $marque = fn (string $champ) => isset($valeurs[$champ]) && trim($valeurs[$champ]) !== '';
 
         return [
-            'numero' => (int) $numero, 'prenom' => $prenom, 'nom' => $nomFamille,
+            'numero' => $numero, 'prenom' => $prenom, 'nom' => $nomFamille,
             'buts' => $nombre('buts'), 'buts7m' => $nombre('buts7m'), 'tirs' => $nombre('tirs'), 'arrets' => $nombre('arrets'),
             'exclusions' => $nombre('exclusions'), 'avertissement' => $marque('avertissement'), 'disqualification' => $marque('disqualification'),
         ];

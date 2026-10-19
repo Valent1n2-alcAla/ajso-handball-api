@@ -54,6 +54,12 @@ class Tarif
     #[ORM\Column(options: ['default' => 0])]
     private int $ordre = 0;
 
+    /** Paiement / adhésion en ligne de ce tarif (HelloAsso) */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
+    #[Assert\Url(protocols: ['https'], requireTld: true)]
+    private ?string $helloassoUrl = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -115,6 +121,18 @@ class Tarif
     public function setOrdre(int $ordre): static
     {
         $this->ordre = $ordre;
+
+        return $this;
+    }
+
+    public function getHelloassoUrl(): ?string
+    {
+        return $this->helloassoUrl;
+    }
+
+    public function setHelloassoUrl(?string $helloassoUrl): static
+    {
+        $this->helloassoUrl = $helloassoUrl === '' ? null : $helloassoUrl;
 
         return $this;
     }

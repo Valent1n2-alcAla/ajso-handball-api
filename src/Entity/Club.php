@@ -87,6 +87,12 @@ class Club
     #[Assert\Url(requireTld: true)]
     private ?string $boutiqueUrl = null;
 
+    /** Page HelloAsso du club (adhésions, dons) */
+    #[ORM\Column(length: 255, nullable: true)]
+    #[Assert\Length(max: 255)]
+    #[Assert\Url(protocols: ['https'], requireTld: true)]
+    private ?string $helloassoUrl = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -232,6 +238,18 @@ class Club
     public function setBoutiqueUrl(?string $boutiqueUrl): static
     {
         $this->boutiqueUrl = $boutiqueUrl;
+
+        return $this;
+    }
+
+    public function getHelloassoUrl(): ?string
+    {
+        return $this->helloassoUrl;
+    }
+
+    public function setHelloassoUrl(?string $helloassoUrl): static
+    {
+        $this->helloassoUrl = $helloassoUrl === '' ? null : $helloassoUrl;
 
         return $this;
     }

@@ -3,6 +3,7 @@
 namespace App\Command;
 
 use App\Entity\MessageContact;
+use App\Entity\Preinscription;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -12,10 +13,10 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * RGPD : supprime les messages du formulaire de contact plus anciens que la durée de conservation.
+ * RGPD : supprime les messages du formulaire de contact et les préinscriptions plus anciens que la durée de conservation.
  * À planifier (ex. une fois par mois).
  */
-#[AsCommand(name: 'app:messages:purger', description: 'Supprime les messages de contact plus anciens que N mois (RGPD)')]
+#[AsCommand(name: 'app:messages:purger', description: 'Supprime les messages de contact et préinscriptions plus anciens que N mois (RGPD)')]
 class PurgerMessagesCommand extends Command
 {
     public function __construct(private readonly EntityManagerInterface $em)
@@ -41,17 +42,23 @@ class PurgerMessagesCommand extends Command
         }
         $limite = new \DateTimeImmutable(sprintf('-%d months', $mois));
 
+        $types = [MessageContact::class => 'message(s)', Preinscription::class => 'préinscription(s)'];
+
         if ($input->getOption('dry-run')) {
-            $n = (int) $this->em->createQuery('SELECT COUNT(m.id) FROM '.MessageContact::class.' m WHERE m.createdAt < :limite')
-                ->setParameter('limite', $limite)->getSingleScalarResult();
-            $io->note(sprintf('%d message(s) antérieur(s) au %s seraient supprimés.', $n, $limite->format('d/m/Y')));
+            foreach ($types as $classe => $libelle) {
+                $n = (int) $this->em->createQuery('SELECT COUNT(m.id) FROM '.$classe.' m WHERE m.createdAt < :limite')
+                    ->setParameter('limite', $limite)->getSingleScalarResult();
+                $io->note(sprintf('%d %s antérieur(s) au %s seraient supprimés.', $n, $libelle, $limite->format('d/m/Y')));
+            }
 
             return Command::SUCCESS;
         }
 
-        $n = $this->em->createQuery('DELETE FROM '.MessageContact::class.' m WHERE m.createdAt < :limite')
-            ->setParameter('limite', $limite)->execute();
-        $io->success(sprintf('%d message(s) antérieur(s) au %s supprimé(s).', $n, $limite->format('d/m/Y')));
+        foreach ($types as $classe => $libelle) {
+            $n = $this->em->createQuery('DELETE FROM '.$classe.' m WHERE m.createdAt < :limite')
+                ->setParameter('limite', $limite)->execute();
+            $io->success(sprintf('%d %s antérieur(s) au %s supprimé(s).', $n, $libelle, $limite->format('d/m/Y')));
+        }
 
         return Command::SUCCESS;
     }

@@ -17,6 +17,11 @@ framework:
             policy: sliding_window
             limit: 5
             interval: '10 minutes'
+        # Préinscriptions : 5 par heure et par adresse IP (une famille peut inscrire plusieurs enfants)
+        preinscription:
+            policy: sliding_window
+            limit: 5
+            interval: '1 hour'
 
     #esi: true
     #fragments: true

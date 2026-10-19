@@ -41,7 +41,7 @@ class Joueur
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
-    #[Groups(['joueur:read', 'participation:read'])]
+    #[Groups(['joueur:read', 'participation:read', 'convocation:read'])]
     private ?int $id = null;
 
     #[ORM\ManyToOne]
@@ -65,7 +65,7 @@ class Joueur
 
     #[ORM\Column(nullable: true)]
     #[Assert\Range(min: 0, max: 99)]
-    #[Groups(['joueur:read', 'participation:read'])]
+    #[Groups(['joueur:read', 'participation:read', 'convocation:read'])]
     private ?int $numero = null;
 
     #[ORM\Column(length: 30, nullable: true)]
@@ -216,7 +216,7 @@ class Joueur
     /**
      * Nom publié : complet en catégorie adultes, « Prénom N. » pour les jeunes (protection des mineurs).
      */
-    #[Groups(['joueur:read', 'participation:read'])]
+    #[Groups(['joueur:read', 'participation:read', 'convocation:read'])]
     public function getNomAffiche(): string
     {
         $nom = trim((string) $this->nom);

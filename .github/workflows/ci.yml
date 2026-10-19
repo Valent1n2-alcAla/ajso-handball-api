@@ -36,3 +36,8 @@ jobs:
 
       - name: Tests
         run: php bin/phpunit
+
+      - name: Configuration de production
+        run: php bin/console cache:clear --env=prod --no-debug
+        env:
+          APP_SECRET: ci-uniquement-pas-un-vrai-secret

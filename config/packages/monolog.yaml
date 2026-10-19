@@ -1,0 +1,61 @@
+monolog:
+    channels:
+        - deprecation # Deprecations are logged in the dedicated "deprecation" channel when it exists
+        - ffhb         # import FFHandball (résumés, erreurs)
+        - notification # e-mails envoyés à l'admin (échecs d'envoi)
+        - sauvegarde   # app:sauvegarde
+
+when@dev:
+    monolog:
+        handlers:
+            main:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                channels: ["!event"]
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine", "!console"]
+
+when@test:
+    monolog:
+        handlers:
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: nested
+                excluded_http_codes: [404, 405]
+                channels: ["!event"]
+            nested:
+                type: stream
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+
+# Production : var/log/prod-AAAA-MM-JJ.log, un fichier par jour, 14 jours conservés
+when@prod:
+    monolog:
+        handlers:
+            # Tâches du club (import FFHB, e-mails, sauvegardes) : tout à partir du niveau info
+            taches:
+                type: filter
+                min_level: info
+                handler: fichier
+                channels: [ffhb, notification, sauvegarde]
+            # Reste de l'application : rien tant qu'il n'y a pas d'erreur, puis le contexte de la requête
+            main:
+                type: fingers_crossed
+                action_level: error
+                handler: fichier
+                excluded_http_codes: [404, 405]
+                channels: ["!deprecation", "!ffhb", "!notification", "!sauvegarde"]
+                buffer_size: 50 # How many messages should be saved? Prevent memory leaks
+            fichier:
+                type: rotating_file
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                level: debug
+                max_files: 14
+            console:
+                type: console
+                process_psr_3_messages: false
+                channels: ["!event", "!doctrine"]

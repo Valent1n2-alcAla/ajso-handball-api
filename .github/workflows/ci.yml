@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: ctype, iconv, intl, mbstring, pdo_pgsql, gd, fileinfo, openssl
+          coverage: none
+
+      - name: Cache Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.composer/cache/files
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Conteneur et configuration
+        run: |
+          php bin/console lint:container
+          php bin/console lint:yaml config --parse-tags
+
+      - name: Mapping Doctrine
+        run: php bin/console doctrine:schema:validate --skip-sync
+
+      - name: Tests
+        run: php bin/phpunit

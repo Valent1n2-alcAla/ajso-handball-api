@@ -14,3 +14,10 @@
 ###< lexik/jwt-authentication-bundle ###
 /ffhb-debug/
 *.pdf
+
+###> phpunit/phpunit ###
+/phpunit.xml
+/.phpunit.cache/
+###< phpunit/phpunit ###
+
+!tests/Fixtures/*.pdf

@@ -12,8 +12,10 @@ use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 /**
- * Envoi d'images depuis l'espace admin (actus, équipes, galerie, partenaires, boutique).
+ * Envoi d'images (actus, équipes, galerie, partenaires, boutique) et de documents PDF depuis l'espace admin.
  * Les fichiers sont rangés dans public/uploads/AAAA/MM/ et servis tels quels.
+ *
+ * PDF : reconnu sur son contenu (type application/pdf et signature « %PDF- »), enregistré sans modification.
  *
  * Le type est vérifié sur le contenu du fichier (pas sur son nom). Si l'extension GD est disponible,
  * l'image est réencodée (métadonnées EXIF/GPS retirées) et ramenée à COTE_MAX pixels au plus ;
@@ -45,20 +47,32 @@ class MediaController extends AbstractController
             return $this->json(['detail' => 'Envoi échoué : '.$fichier->getErrorMessage()], 400);
         }
         if ($fichier->getSize() > self::TAILLE_MAX) {
-            return $this->json(['detail' => 'Image trop lourde (10 Mo maximum).'], 400);
+            return $this->json(['detail' => 'Fichier trop lourd (10 Mo maximum).'], 400);
         }
 
         $chemin = $fichier->getPathname();
         $type = (new \finfo(\FILEINFO_MIME_TYPE))->file($chemin);
+        $base = rtrim($this->urlPublique ?: $request->getSchemeAndHttpHost(), '/');
+        $sousDossier = date('Y/m');
+
+        if ($type === 'application/pdf') {
+            if (!self::estPdf($chemin)) {
+                return $this->json(['detail' => 'PDF invalide.'], 400);
+            }
+            $nom = bin2hex(random_bytes(12)).'.pdf';
+            $fichier->move($this->dossier.'/'.$sousDossier, $nom);
+
+            return $this->json(['url' => "$base/uploads/$sousDossier/$nom"], 201);
+        }
+
         $infos = @getimagesize($chemin);
         if (!isset(self::EXTENSIONS[$type]) || !$infos) {
-            return $this->json(['detail' => 'Formats acceptés : JPG, PNG, WebP, GIF.'], 400);
+            return $this->json(['detail' => 'Formats acceptés : JPG, PNG, WebP, GIF, PDF.'], 400);
         }
         if ($infos[0] * $infos[1] > self::PIXELS_MAX) {
             return $this->json(['detail' => 'Image trop grande (50 mégapixels maximum).'], 400);
         }
 
-        $sousDossier = date('Y/m');
         $nom = bin2hex(random_bytes(12)).'.'.self::EXTENSIONS[$type];
         $cible = $this->dossier.'/'.$sousDossier;
         $contenu = $type !== 'image/gif' ? $this->reencoder($chemin, $type) : null;
@@ -68,9 +82,20 @@ class MediaController extends AbstractController
             $fichier->move($cible, $nom);
         }
 
-        $base = rtrim($this->urlPublique ?: $request->getSchemeAndHttpHost(), '/');
-
         return $this->json(['url' => "$base/uploads/$sousDossier/$nom"], 201);
+    }
+
+    /** Signature PDF en tête de fichier (finfo seul peut se contenter d'un « %PDF » plus loin). */
+    private static function estPdf(string $chemin): bool
+    {
+        $f = @fopen($chemin, 'rb');
+        if (!$f) {
+            return false;
+        }
+        $debut = (string) fread($f, 1024);
+        fclose($f);
+
+        return preg_match('/^(?:\xEF\xBB\xBF)?\s{0,4}%PDF-\d/', $debut) === 1;
     }
 
     /** Image réencodée (sans métadonnées, redimensionnée si besoin), ou null si GD ne sait pas la traiter. */

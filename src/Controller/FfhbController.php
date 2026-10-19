@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Repository\EquipeRepository;
 use App\Service\FfhbImporter;
+use App\Service\ImportEnCoursException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -24,6 +25,8 @@ class FfhbController extends AbstractController
 
         try {
             return $this->json($importer->importer($equipe));
+        } catch (ImportEnCoursException $e) {
+            return $this->json(['detail' => $e->getMessage()], 409);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['detail' => $e->getMessage()], 422);
         } catch (\Throwable $e) {

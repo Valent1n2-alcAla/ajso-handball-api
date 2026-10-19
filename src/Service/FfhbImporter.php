@@ -12,6 +12,7 @@ use App\Repository\EquipeRepository;
 use App\Repository\RencontreRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
@@ -58,6 +59,7 @@ class FfhbImporter
         private readonly ClassementRepository $classements,
         private readonly FeuilleMatchLecteur $feuilles,
         private readonly CompositionsImporter $compositions,
+        private readonly LockFactory $verrous,
         #[Autowire('%env(FFHB_HOSTS)%')] string $hotes,
         /** Pause entre deux pages (secondes) : rester léger avec le site de la fédération */
         #[Autowire('%env(float:FFHB_PAUSE)%')] private readonly float $pause = 1.0,
@@ -80,15 +82,25 @@ class FfhbImporter
             throw new \InvalidArgumentException(sprintf('« %s » : renseignez le nom FFHandball de l\'équipe et l\'adresse ffhandball.fr d\'au moins une de ses compétitions.', $equipe->getNom()));
         }
 
+        // Un seul import à la fois (tâche planifiée et bouton de l'admin)
+        $verrou = $this->verrous->createLock('ffhb-import', 1800);
+        if (!$verrou->acquire()) {
+            throw new ImportEnCoursException('Un import FFHandball est déjà en cours, réessayez dans quelques minutes.');
+        }
+
         $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'feuilles' => 0, 'joueurs' => 0, 'ignorees' => [], 'infos' => []];
         $pages = 0;
-        foreach ($competitions as $championnat) {
-            try {
-                $this->importerCompetition($equipe, $championnat, $stats, $pages);
-                ++$stats['competitions'];
-            } catch (\InvalidArgumentException $e) {
-                $stats['ignorees'][] = $championnat->getNom().' : '.$e->getMessage();
+        try {
+            foreach ($competitions as $championnat) {
+                try {
+                    $this->importerCompetition($equipe, $championnat, $stats, $pages);
+                    ++$stats['competitions'];
+                } catch (\InvalidArgumentException $e) {
+                    $stats['ignorees'][] = $championnat->getNom().' : '.$e->getMessage();
+                }
             }
+        } finally {
+            $verrou->release();
         }
         $stats['pages'] = $pages;
         if ($stats['competitions'] === 0) {
@@ -236,31 +248,48 @@ class FfhbImporter
             $stats['infos'][] = sprintf('%s : nom reconnu sur ffhandball.fr « %s »', $championnat->getNom(), $nous);
         }
 
-        // Classement officiel : remplacé en bloc
+        // Classement officiel : remplacé en bloc, dans une transaction (jamais de classement à moitié écrit)
         $lignes = ($poule['competitions---mini-classement-or-ads'] ?? $poule['competitions---classement'] ?? [])['classements'] ?? [];
         if ($lignes) {
-            foreach ($this->classements->findBy(['championnat' => $championnat]) as $ancien) {
-                $this->em->remove($ancien);
-            }
-            foreach ($lignes as $l) {
-                $nom = self::nettoyer($l['equipe_libelle'] ?? '');
-                if ($nom === '') {
-                    continue;
+            $this->em->wrapInTransaction(function () use ($championnat, $lignes, $nous, &$stats) {
+                foreach ($this->classements->findBy(['championnat' => $championnat]) as $ancien) {
+                    $this->em->remove($ancien);
                 }
-                $this->em->persist((new Classement())
-                    ->setChampionnat($championnat)
-                    ->setPosition((int) ($l['place'] ?? 0) ?: 99)
-                    ->setEquipe($nom)
-                    ->setEstAjso(self::normaliser($nom) === $nous)
-                    ->setPoints((int) ($l['point'] ?? 0))
-                    ->setJoues((int) ($l['joue'] ?? 0))
-                    ->setGagnes((int) ($l['gagne'] ?? 0))
-                    ->setNuls((int) ($l['nul'] ?? 0))
-                    ->setPerdus((int) ($l['perdu'] ?? 0))
-                    ->setButsPour((int) ($l['butPlus'] ?? 0))
-                    ->setButsContre((int) ($l['butMoins'] ?? 0)));
-                ++$stats['classement'];
+                foreach ($lignes as $l) {
+                    $nom = self::nettoyer($l['equipe_libelle'] ?? '');
+                    if ($nom === '') {
+                        continue;
+                    }
+                    $this->em->persist((new Classement())
+                        ->setChampionnat($championnat)
+                        ->setPosition((int) ($l['place'] ?? 0) ?: 99)
+                        ->setEquipe($nom)
+                        ->setEstAjso(self::normaliser($nom) === $nous)
+                        ->setPoints((int) ($l['point'] ?? 0))
+                        ->setJoues((int) ($l['joue'] ?? 0))
+                        ->setGagnes((int) ($l['gagne'] ?? 0))
+                        ->setNuls((int) ($l['nul'] ?? 0))
+                        ->setPerdus((int) ($l['perdu'] ?? 0))
+                        ->setButsPour((int) ($l['butPlus'] ?? 0))
+                        ->setButsContre((int) ($l['butMoins'] ?? 0)));
+                    ++$stats['classement'];
+                }
+                $this->em->flush();
+            });
+        }
+
+        // Matchs déjà connus de la compétition, chargés en une seule requête
+        $ids = [];
+        foreach ($listes as $rencontres) {
+            foreach ($rencontres as $r) {
+                if ((string) ($r['ext_rencontreId'] ?? '') !== '') {
+                    $ids[(string) $r['ext_rencontreId']] = true;
+                }
             }
+        }
+        $connus = [];
+        foreach ($ids ? $this->rencontres->findBy(['ffhbId' => array_map('strval', array_keys($ids))]) : [] as $m) {
+            $connus[$m->getFfhbId()] = $m;
         }
 
         $adversaires = [];
@@ -281,7 +310,7 @@ class FfhbImporter
                 $nomAdv = $estDom ? $ext : $dom;
                 $adversaire = $adversaires[$nomAdv] ??= $this->adversaire($nomAdv, $equipe);
 
-                $match = $this->rencontres->findOneBy(['ffhbId' => $id]);
+                $match = $connus[$id] ?? null;
                 $nouveau = !$match;
                 $match ??= (new Rencontre())->setFfhbId($id)->setLieu(self::LIEU_INCONNU);
 
@@ -308,6 +337,7 @@ class FfhbImporter
                 }
 
                 $this->em->persist($match);
+                $connus[$id] = $match;
                 ++$stats[$nouveau ? 'crees' : 'maj'];
             }
         }
@@ -396,31 +426,36 @@ class FfhbImporter
                 $stats['infos'][] = sprintf('Feuille %s : aucun joueur lu', $code);
                 continue;
             }
-            // La feuille officielle remplace une composition saisie à la main
-            foreach ($this->em->getRepository(Participation::class)->findBy(['rencontre' => $match]) as $ancienne) {
-                $this->em->remove($ancienne);
-            }
-            $this->em->flush();
-            $total = 0;
-            foreach ($nos as $l) {
-                [$joueur, $nouveau] = $this->compositions->trouverJoueur($equipe, $l['prenom'], $l['nom']);
-                $stats['joueurs'] += (int) $nouveau;
-                if ($nouveau) {
-                    $joueur->setCreeParFeuille(true);
+            // La feuille officielle remplace une composition saisie à la main, en une transaction :
+            // en cas d'erreur, l'ancienne composition est conservée
+            $total = $this->em->wrapInTransaction(function () use ($equipe, $match, $nos, &$stats) {
+                foreach ($this->em->getRepository(Participation::class)->findBy(['rencontre' => $match]) as $ancienne) {
+                    $this->em->remove($ancienne);
                 }
-                $joueur->setNumero($l['numero']);
-                $this->em->persist((new Participation())->setRencontre($match)->setJoueur($joueur)
-                    ->setNumero($l['numero'])->setButs($l['buts'])->setButs7m($l['buts7m'])->setTirs($l['tirs'])
-                    ->setArrets($l['arrets'])->setExclusions($l['exclusions'])
-                    ->setAvertissement($l['avertissement'])->setDisqualification($l['disqualification']));
-                $total += $l['buts'];
-            }
-            $match->setFeuilleLue(true);
+                $this->em->flush();
+                $total = 0;
+                foreach ($nos as $l) {
+                    [$joueur, $nouveau] = $this->compositions->trouverJoueur($equipe, $l['prenom'], $l['nom']);
+                    $stats['joueurs'] += (int) $nouveau;
+                    if ($nouveau) {
+                        $joueur->setCreeParFeuille(true);
+                    }
+                    $joueur->setNumero($l['numero']);
+                    $this->em->persist((new Participation())->setRencontre($match)->setJoueur($joueur)
+                        ->setNumero($l['numero'])->setButs($l['buts'])->setButs7m($l['buts7m'])->setTirs($l['tirs'])
+                        ->setArrets($l['arrets'])->setExclusions($l['exclusions'])
+                        ->setAvertissement($l['avertissement'])->setDisqualification($l['disqualification']));
+                    $total += $l['buts'];
+                }
+                $match->setFeuilleLue(true);
+                $this->em->flush();
+
+                return $total;
+            });
             ++$stats['feuilles'];
             if ($score !== null && $score !== $total) {
                 $stats['infos'][] = sprintf('Feuille %s : %d buts lus pour %d au score, à vérifier', $code, $total, $score);
             }
-            $this->em->flush();
         }
     }
 
@@ -517,12 +552,22 @@ class FfhbImporter
         return true;
     }
 
+    /**
+     * Adversaire du même nom et de la même catégorie que notre équipe (« CAEN HB » seniors ≠ « CAEN HB » -13),
+     * sinon du même nom sans catégorie (saisi à la main) ; à défaut il est créé dans la catégorie de l'équipe.
+     */
     private function adversaire(string $nom, Equipe $equipe): Equipe
     {
-        $existant = $this->equipes->createQueryBuilder('e')
+        $qb = $this->equipes->createQueryBuilder('e')
             ->where('LOWER(e.nom) = :nom')->andWhere('e.estAjso = false')
-            ->setParameter('nom', mb_strtolower($nom))
-            ->setMaxResults(1)->getQuery()->getOneOrNullResult();
+            ->setParameter('nom', mb_strtolower(mb_substr($nom, 0, 100)))
+            ->setMaxResults(1);
+        if ($categorie = $equipe->getCategorie()) {
+            $qb->andWhere('e.categorie = :cat OR e.categorie IS NULL')->setParameter('cat', $categorie)
+                ->addSelect('CASE WHEN e.categorie IS NULL THEN 1 ELSE 0 END AS HIDDEN sansCategorie')
+                ->orderBy('sansCategorie', 'ASC');
+        }
+        $existant = $qb->addOrderBy('e.id', 'ASC')->getQuery()->getOneOrNullResult();
         if ($existant) {
             return $existant;
         }

@@ -23,6 +23,9 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * - date       : AAAA-MM-JJ, ou « WE AAAA-MM-JJ » (samedi du week-end) si le jour exact est inconnu
  * - heure      : HH:MM ou vide
  * - domicile   : oui/non
+ *
+ * Un match déjà présent (même équipe, même adversaire, même date) est mis à jour au lieu d'être doublé :
+ * le fichier peut donc être réimporté après correction.
  */
 #[AsCommand(name: 'app:import-rencontres', description: 'Importe des matchs depuis un fichier CSV')]
 class ImportRencontresCommand extends Command
@@ -61,6 +64,8 @@ class ImportRencontresCommand extends Command
         }
 
         $crees = 0;
+        $majs = 0;
+        $vus = [];
         $erreurs = [];
         $ligne = 1;
         $adversairesCrees = [];
@@ -78,11 +83,15 @@ class ImportRencontresCommand extends Command
             }
 
             $nomAdv = $row['adversaire'];
-            $adversaire = $adversairesCrees[$nomAdv] ?? $this->equipes->findOneBy(['nom' => $nomAdv, 'estAjso' => false]);
+            // Adversaire de la même catégorie (« CAEN HB » seniors ≠ « CAEN HB » -13), sinon sans catégorie
+            $cleAdv = $nomAdv.'|'.$equipe->getCategorie()?->getId();
+            $adversaire = $adversairesCrees[$cleAdv]
+                ?? $this->equipes->findOneBy(['nom' => $nomAdv, 'estAjso' => false, 'categorie' => $equipe->getCategorie()])
+                ?? $this->equipes->findOneBy(['nom' => $nomAdv, 'estAjso' => false, 'categorie' => null]);
             if (!$adversaire && $nomAdv !== '') {
                 $adversaire = (new Equipe())->setNom($nomAdv)->setEstAjso(false)->setCategorie($equipe->getCategorie());
                 $this->em->persist($adversaire);
-                $adversairesCrees[$nomAdv] = $adversaire;
+                $adversairesCrees[$cleAdv] = $adversaire;
             }
             if (!$adversaire) {
                 $erreurs[] = "L$ligne : adversaire manquant";
@@ -101,7 +110,11 @@ class ImportRencontresCommand extends Command
                 continue;
             }
 
-            $this->em->persist((new Rencontre())
+            // Doublon (déjà en base ou plus haut dans le fichier) : mise à jour
+            $cle = spl_object_id($equipe).'|'.spl_object_id($adversaire).'|'.$date->format('Y-m-d');
+            $match = $vus[$cle] ?? ($adversaire->getId() ? $this->em->getRepository(Rencontre::class)->findOneBy(['equipe' => $equipe, 'equipeAdverse' => $adversaire, 'date' => $date]) : null);
+            $match ? ++$majs : ++$crees;
+            $this->em->persist($vus[$cle] = ($match ?? new Rencontre())
                 ->setEquipe($equipe)
                 ->setEquipeAdverse($adversaire)
                 ->setDate($date)
@@ -110,7 +123,6 @@ class ImportRencontresCommand extends Command
                 ->setLieu($row['lieu'] !== '' ? $row['lieu'] : 'À définir')
                 ->setDomicile(in_array(strtolower($row['domicile']), ['oui', 'o', '1', 'true', 'dom', 'domicile'], true))
                 ->setJournee($row['journee'] !== '' ? $row['journee'] : null));
-            ++$crees;
         }
         fclose($handle);
 
@@ -118,12 +130,12 @@ class ImportRencontresCommand extends Command
             $io->warning($e);
         }
         if ($input->getOption('dry-run')) {
-            $io->note("Simulation : $crees matchs valides, ".count($erreurs).' erreur(s). Rien enregistré.');
+            $io->note("Simulation : $crees match(s) à créer, $majs à mettre à jour, ".count($erreurs).' erreur(s). Rien enregistré.');
 
             return $erreurs ? Command::FAILURE : Command::SUCCESS;
         }
         $this->em->flush();
-        $io->success("$crees matchs importés, ".count($adversairesCrees).' adversaire(s) créé(s).');
+        $io->success("$crees match(s) créé(s), $majs mis à jour, ".count($adversairesCrees).' adversaire(s) créé(s).');
 
         return $erreurs ? Command::FAILURE : Command::SUCCESS;
     }

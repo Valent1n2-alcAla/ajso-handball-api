@@ -24,6 +24,7 @@
         "symfony/flex": "^2.11",
         "symfony/framework-bundle": "7.4.*",
         "symfony/http-client": "7.4.*",
+        "symfony/lock": "7.4.*",
         "symfony/mime": "7.4.*",
         "symfony/property-access": "7.4.*",
         "symfony/property-info": "7.4.*",
@@ -88,6 +89,7 @@
     },
     "require-dev": {
         "doctrine/doctrine-fixtures-bundle": "^4.3",
+        "phpunit/phpunit": "^12",
         "symfony/maker-bundle": "^1.68"
     }
 }

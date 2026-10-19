@@ -14,27 +14,30 @@ use ApiPlatform\Metadata\Put;
 use App\Repository\JoueurRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
+use Symfony\Component\Serializer\Attribute\SerializedName;
 use Symfony\Component\Validator\Constraints as Assert;
 
 #[ApiResource(
     operations: [
         new GetCollection(),
         new Get(),
-        // Lecture admin : nom de famille complet
-        new GetCollection(uriTemplate: '/admin/joueurs', security: "is_granted('ROLE_ADMIN')", normalizationContext: ['groups' => ['joueur:read', 'joueur:admin']]),
-        new Get(uriTemplate: '/admin/joueurs/{id}', security: "is_granted('ROLE_ADMIN')", normalizationContext: ['groups' => ['joueur:read', 'joueur:admin']]),
-        new Post(security: "is_granted('ROLE_ADMIN')"),
-        new Put(security: "is_granted('ROLE_ADMIN')"),
-        new Patch(security: "is_granted('ROLE_ADMIN')"),
+        // Lecture admin : nom de famille complet, photo et autorisation
+        new GetCollection(uriTemplate: '/admin/joueurs', security: "is_granted('ROLE_ADMIN')", normalizationContext: self::LECTURE_ADMIN),
+        new Get(uriTemplate: '/admin/joueurs/{id}', security: "is_granted('ROLE_ADMIN')", normalizationContext: self::LECTURE_ADMIN),
+        new Post(security: "is_granted('ROLE_ADMIN')", normalizationContext: self::LECTURE_ADMIN),
+        new Put(security: "is_granted('ROLE_ADMIN')", normalizationContext: self::LECTURE_ADMIN),
+        new Patch(security: "is_granted('ROLE_ADMIN')", normalizationContext: self::LECTURE_ADMIN),
         new Delete(security: "is_granted('ROLE_ADMIN')"),
     ],
-    normalizationContext: ['groups' => ['joueur:read']],
+    normalizationContext: ['groups' => ['joueur:read', 'joueur:public']],
     order: ['numero' => 'ASC', 'prenom' => 'ASC'],
 )]
 #[ApiFilter(SearchFilter::class, properties: ['equipe' => 'exact'])]
 #[ORM\Entity(repositoryClass: JoueurRepository::class)]
 class Joueur
 {
+    private const LECTURE_ADMIN = ['groups' => ['joueur:read', 'joueur:admin']];
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
@@ -70,10 +73,16 @@ class Joueur
     #[Groups(['joueur:read', 'participation:read'])]
     private ?string $poste = null;
 
+    /** Jamais publiée telle quelle : voir getPhotoPublique() */
     #[ORM\Column(length: 255, nullable: true)]
     #[Assert\Length(max: 255)]
-    #[Groups(['joueur:read', 'participation:read'])]
+    #[Groups(['joueur:admin'])]
     private ?string $photo = null;
+
+    /** Accord pour publier la photo (des parents pour un mineur) */
+    #[ORM\Column(options: ['default' => false])]
+    #[Groups(['joueur:admin'])]
+    private bool $photoAutorisee = false;
 
     #[ORM\Column(options: ['default' => false])]
     #[Groups(['joueur:read', 'participation:read'])]
@@ -172,6 +181,26 @@ class Joueur
         return $this;
     }
 
+    public function isPhotoAutorisee(): bool
+    {
+        return $this->photoAutorisee;
+    }
+
+    public function setPhotoAutorisee(bool $photoAutorisee): static
+    {
+        $this->photoAutorisee = $photoAutorisee;
+
+        return $this;
+    }
+
+    /** Photo publiée : celle d'un mineur seulement avec autorisation (champ public « photo »). */
+    #[Groups(['joueur:public', 'participation:read'])]
+    #[SerializedName('photo')]
+    public function getPhotoPublique(): ?string
+    {
+        return $this->estAdulte() || $this->photoAutorisee ? $this->photo : null;
+    }
+
     public function isCapitaine(): bool
     {
         return $this->capitaine;
@@ -190,9 +219,14 @@ class Joueur
     #[Groups(['joueur:read', 'participation:read'])]
     public function getNomAffiche(): string
     {
-        $adulte = ($this->equipe?->getCategorie()?->getTranche()?->getAgeMin() ?? 0) >= 18;
         $nom = trim((string) $this->nom);
 
-        return trim($this->prenom.' '.($adulte ? $nom : ($nom !== '' ? mb_strtoupper(mb_substr($nom, 0, 1)).'.' : '')));
+        return trim($this->prenom.' '.($this->estAdulte() ? $nom : ($nom !== '' ? mb_strtoupper(mb_substr($nom, 0, 1)).'.' : '')));
+    }
+
+    /** Catégorie adultes (âge minimum de la tranche ≥ 18) ; sinon traité comme mineur. */
+    private function estAdulte(): bool
+    {
+        return ($this->equipe?->getCategorie()?->getTranche()?->getAgeMin() ?? 0) >= 18;
     }
 }

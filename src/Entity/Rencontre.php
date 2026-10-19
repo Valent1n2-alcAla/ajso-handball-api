@@ -39,6 +39,8 @@ use Symfony\Component\Validator\Constraints as Assert;
 #[ApiFilter(BooleanFilter::class, properties: ['domicile'])]
 #[ApiFilter(OrderFilter::class, properties: ['date', 'heure'])]
 #[ORM\Entity(repositoryClass: RencontreRepository::class)]
+#[ORM\Index(name: 'idx_rencontre_date', columns: ['date'])]
+#[ORM\Index(name: 'idx_rencontre_fdm_code', columns: ['fdm_code'])]
 class Rencontre
 {
     #[ORM\Id]
@@ -53,8 +55,9 @@ class Rencontre
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipe = null;
 
+    /** Un adversaire encore présent dans des matchs ne peut pas être supprimé (sinon les matchs disparaîtraient) */
     #[ORM\ManyToOne(inversedBy: 'rencontresExterieur')]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'RESTRICT')]
     #[Assert\NotNull]
     #[Groups(['rencontre:read'])]
     private ?Equipe $equipeAdverse = null;

@@ -47,8 +47,9 @@ class Creneau
     #[Groups(['creneau:read'])]
     private ?Equipe $equipe = null;
 
+    /** Un gymnase encore utilisé par des créneaux ne peut pas être supprimé */
     #[ORM\ManyToOne]
-    #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
+    #[ORM\JoinColumn(nullable: false, onDelete: 'RESTRICT')]
     #[Assert\NotNull]
     #[Groups(['creneau:read'])]
     private ?Gymnase $gymnase = null;

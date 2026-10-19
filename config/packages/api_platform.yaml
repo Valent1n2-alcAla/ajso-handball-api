@@ -13,3 +13,10 @@ api_platform:
             JWT:
                 name: Authorization
                 type: header
+
+# Production : pas de documentation publique de l'API
+when@prod:
+    api_platform:
+        enable_docs: false
+        enable_swagger_ui: false
+        enable_re_doc: false

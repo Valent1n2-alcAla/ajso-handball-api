@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Repository\MessageContactRepository;
+use App\State\MessageContactProcessor;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Attribute\Groups;
@@ -21,7 +22,7 @@ use Symfony\Component\Validator\Constraints as Assert;
     operations: [
         new GetCollection(security: "is_granted('ROLE_ADMIN')"),
         new Get(security: "is_granted('ROLE_ADMIN')"),
-        new Post(denormalizationContext: ['groups' => ['message:write']]),
+        new Post(denormalizationContext: ['groups' => ['message:write']], processor: MessageContactProcessor::class),
         new Patch(security: "is_granted('ROLE_ADMIN')", denormalizationContext: ['groups' => ['message:admin']]),
         new Delete(security: "is_granted('ROLE_ADMIN')"),
     ],

@@ -3,8 +3,20 @@ framework:
     default_locale: fr
     secret: '%env(APP_SECRET)%'
 
-    # Note that the session will be started ONLY if you read or write from it.
-    session: true
+    # API sans état (JWT) : aucune session
+    session: false
+
+    # Derrière un reverse proxy / hébergeur : IP du proxy (ex. « 127.0.0.1,REMOTE_ADDR »), vide sinon
+    trusted_proxies: '%env(TRUSTED_PROXIES)%'
+    # Noms d'hôte acceptés (regex, ex. « ^api\.ajso-handball\.fr$ »), vide = tous
+    trusted_hosts: '%env(TRUSTED_HOSTS)%'
+
+    rate_limiter:
+        # Formulaire de contact : 5 messages par 10 minutes et par adresse IP
+        contact:
+            policy: sliding_window
+            limit: 5
+            interval: '10 minutes'
 
     #esi: true
     #fragments: true
@@ -12,5 +24,3 @@ framework:
 when@test:
     framework:
         test: true
-        session:
-            storage_factory_id: session.storage.factory.mock_file

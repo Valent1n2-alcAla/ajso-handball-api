@@ -49,6 +49,20 @@ class FeuilleMatchLecteurTest extends TestCase
         }
     }
 
+    public function testNomsDesEquipes(): void
+    {
+        $lecteur = new FeuilleMatchLecteur();
+        $feuille = $lecteur->lire((string) file_get_contents(__DIR__.'/../Fixtures/test.pdf'));
+        self::assertSame(['recevant' => 'AJS OUISTREHAM HANDBALL', 'visiteur' => 'PL AVRANCHES 2'], $feuille['noms']);
+
+        $feuille = $lecteur->lire((string) file_get_contents(__DIR__.'/../Fixtures/enc-aes-256-objstm.pdf'));
+        self::assertSame('PL AVRANCHES 2', $feuille['noms']['visiteur']);
+
+        // Pas de ligne de titre : noms inconnus
+        $feuille = $lecteur->lire((string) file_get_contents(__DIR__.'/../Fixtures/sans-entete2.pdf'));
+        self::assertSame(['recevant' => null, 'visiteur' => null], $feuille['noms']);
+    }
+
     public function testFeuilleIllisible(): void
     {
         $this->expectException(\Throwable::class);

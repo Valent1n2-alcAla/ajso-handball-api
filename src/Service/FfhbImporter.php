@@ -11,6 +11,7 @@ use App\Repository\ClassementRepository;
 use App\Repository\EquipeRepository;
 use App\Repository\RencontreRepository;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -60,6 +61,7 @@ class FfhbImporter
         private readonly FeuilleMatchLecteur $feuilles,
         private readonly CompositionsImporter $compositions,
         private readonly LockFactory $verrous,
+        private readonly LoggerInterface $ffhbLogger,
         #[Autowire('%env(FFHB_HOSTS)%')] string $hotes,
         /** Pause entre deux pages (secondes) : rester léger avec le site de la fédération */
         #[Autowire('%env(float:FFHB_PAUSE)%')] private readonly float $pause = 1.0,
@@ -72,7 +74,7 @@ class FfhbImporter
     /**
      * Importe toutes les compétitions de l'équipe (championnat principal, phases, coupe).
      *
-     * @return array{equipe: string, crees: int, maj: int, classement: int, pages: int, competitions: int, feuilles: int, joueurs: int, ignorees: list<string>, infos: list<string>}
+     * @return array{equipe: string, crees: int, maj: int, retires: int, classement: int, pages: int, competitions: int, feuilles: int, joueurs: int, ignorees: list<string>, infos: list<string>}
      */
     public function importer(Equipe $equipe): array
     {
@@ -88,7 +90,7 @@ class FfhbImporter
             throw new ImportEnCoursException('Un import FFHandball est déjà en cours, réessayez dans quelques minutes.');
         }
 
-        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'feuilles' => 0, 'joueurs' => 0, 'ignorees' => [], 'infos' => []];
+        $stats = ['equipe' => $equipe->getNom(), 'crees' => 0, 'maj' => 0, 'retires' => 0, 'classement' => 0, 'pages' => 0, 'competitions' => 0, 'feuilles' => 0, 'joueurs' => 0, 'ignorees' => [], 'infos' => []];
         $pages = 0;
         try {
             foreach ($competitions as $championnat) {
@@ -97,6 +99,7 @@ class FfhbImporter
                     ++$stats['competitions'];
                 } catch (\InvalidArgumentException $e) {
                     $stats['ignorees'][] = $championnat->getNom().' : '.$e->getMessage();
+                    $this->ffhbLogger->warning('{equipe} / {competition} ignorée : {raison}', ['equipe' => $equipe->getNom(), 'competition' => $championnat->getNom(), 'raison' => $e->getMessage()]);
                 }
             }
         } finally {
@@ -105,6 +108,10 @@ class FfhbImporter
         $stats['pages'] = $pages;
         if ($stats['competitions'] === 0) {
             throw new \InvalidArgumentException(implode(' ; ', $stats['ignorees']));
+        }
+        $this->ffhbLogger->info('{equipe} : {competitions} compétition(s), {crees} match(s) créé(s), {maj} mis à jour, {retires} retiré(s), {feuilles} feuille(s) lue(s), {joueurs} nouveau(x) joueur(s), {pages} page(s)', $stats);
+        foreach ($stats['infos'] as $info) {
+            $this->ffhbLogger->info('{equipe} : {info}', ['equipe' => $equipe->getNom(), 'info' => $info]);
         }
 
         return $stats;
@@ -211,7 +218,7 @@ class FfhbImporter
     }
 
     /**
-     * @param array{crees: int, maj: int, classement: int} $stats
+     * @param array{crees: int, maj: int, retires: int, classement: int} $stats
      */
     private function importerCompetition(Equipe $equipe, Championnat $championnat, array &$stats, int &$pages): void
     {
@@ -343,6 +350,8 @@ class FfhbImporter
         }
         $this->em->flush();
 
+        $stats['retires'] += $this->retirerDisparus($equipe, $championnat, $listes, $journees, array_keys($ids));
+
         if ($stats['crees'] + $stats['maj'] === $avant) {
             $lues = array_merge(...array_values($listes) ?: [[]]);
             $stats['infos'][] = sprintf('%s : aucun match de « %s » parmi %d rencontres lues sur %d journée(s)%s',
@@ -355,15 +364,91 @@ class FfhbImporter
 
         $this->completerCodes($equipe, $championnat, $base, $pages);
         $this->em->flush();
-        $this->lireFeuilles($equipe, $championnat, $stats);
+        $this->lireFeuilles($equipe, $championnat, $nous, $stats);
         $this->em->flush();
+    }
+
+    /**
+     * Matchs de l'équipe dans cette compétition qui ne figurent plus sur ffhandball.fr (annulés, déplacés dans
+     * une autre poule, saisis en double) : retirés s'ils n'ont ni score ni composition.
+     * Seules comptent les journées relues avec au moins une rencontre (une page vide ou mal lue ne retire rien),
+     * et les journées qui ont disparu du calendrier de la poule.
+     *
+     * @param array<int, list<array<string, mixed>>> $listes  rencontres lues, par numéro de journée
+     * @param array<int, string>                     $journees calendrier de la poule
+     * @param list<int|string>                       $vus      identifiants fédéraux lus dans ces journées
+     */
+    private function retirerDisparus(Equipe $equipe, Championnat $championnat, array $listes, array $journees, array $vus): int
+    {
+        $relues = array_keys(array_filter($listes));
+        if (!$relues || !$vus) {
+            return 0;
+        }
+
+        $candidats = $this->rencontres->createQueryBuilder('r')
+            ->where('r.equipe = :e')->andWhere('r.championnat = :c')
+            ->andWhere('r.ffhbId IS NOT NULL')->andWhere('r.ffhbId NOT IN (:vus)')
+            ->andWhere('r.scoreDom IS NULL')->andWhere('r.scoreExt IS NULL')
+            ->andWhere('NOT EXISTS (SELECT p.id FROM '.Participation::class.' p WHERE p.rencontre = r)')
+            ->setParameter('e', $equipe)->setParameter('c', $championnat)
+            ->setParameter('vus', array_map('strval', $vus))
+            ->getQuery()->getResult();
+
+        $retires = [];
+        foreach ($candidats as $match) {
+            $n = preg_match('/^J(\d+)$/', (string) $match->getJournee(), $m) ? (int) $m[1] : null;
+            if ($n !== null && (in_array($n, $relues, true) || ($journees && !isset($journees[$n])))) {
+                $retires[] = sprintf('%s %s (%s)', $match->getJournee(), $match->getDate()?->format('d/m'), $match->getEquipeAdverse()?->getNom());
+                $this->em->remove($match);
+            }
+        }
+        if ($retires) {
+            $this->em->flush();
+            $this->ffhbLogger->notice('{equipe} / {competition} : {n} match(s) disparu(s) de ffhandball.fr retiré(s) : {liste}',
+                ['equipe' => $equipe->getNom(), 'competition' => $championnat->getNom(), 'n' => count($retires), 'liste' => implode(', ', $retires)]);
+        }
+
+        return count($retires);
+    }
+
+    /**
+     * Côté de notre équipe sur la feuille : d'abord par les noms d'équipes lus sur la feuille (tolérance de
+     * resoudreNom), sinon le côté attendu (recevant à domicile), corrigé par le total des buts quand il ne
+     * correspond qu'au score de l'autre côté.
+     *
+     * @param array{recevant: list<array<string, mixed>>, visiteur: list<array<string, mixed>>, noms?: array{recevant: ?string, visiteur: ?string}} $feuille
+     * @param string $nous libellé fédéral normalisé de notre équipe
+     *
+     * @return 'recevant'|'visiteur'
+     */
+    public static function choisirCote(array $feuille, bool $domicile, ?int $score, string $nous): string
+    {
+        $noms = array_filter($feuille['noms'] ?? [], fn ($n) => is_string($n) && $n !== '');
+        if ($noms && $nous !== '') {
+            $normes = array_map(fn (string $n) => self::normaliser($n), $noms);
+            $trouve = self::resoudreNom(array_values($noms), $nous);
+            $cotes = $trouve !== null ? array_keys($normes, $trouve, true) : [];
+            if (count($cotes) === 1 && $feuille[$cotes[0]]) {
+                return $cotes[0];
+            }
+        }
+
+        $cote = $domicile ? 'recevant' : 'visiteur';
+        $autre = $cote === 'recevant' ? 'visiteur' : 'recevant';
+        $somme = fn (array $js) => array_sum(array_column($js, 'buts'));
+        // Feuille où l'ordre des équipes diffère : le total des buts désigne notre côté
+        if ($score !== null && $somme($feuille[$cote]) !== $score && $feuille[$autre] && $somme($feuille[$autre]) === $score) {
+            return $autre;
+        }
+
+        return $cote;
     }
 
     /**
      * Feuilles de match des rencontres jouées pas encore lues : joueurs, buts, tirs, arrêts, sanctions.
      * Le serveur des feuilles limite le nombre de téléchargements : au plus FEUILLES_PAR_IMPORT par passage.
      */
-    private function lireFeuilles(Equipe $equipe, Championnat $championnat, array &$stats): void
+    private function lireFeuilles(Equipe $equipe, Championnat $championnat, string $nous, array &$stats): void
     {
         $aLire = $this->rencontres->createQueryBuilder('r')
             ->where('r.equipe = :e')->andWhere('r.championnat = :c')
@@ -410,17 +495,12 @@ class FfhbImporter
                 $feuille = $this->feuilles->lire($pdf);
             } catch (\Throwable $e) {
                 $stats['infos'][] = sprintf('Feuille %s (%s) illisible : %s', $code, $match->getDate()?->format('d/m'), $e->getMessage());
+                $this->ffhbLogger->warning('Feuille {code} illisible : {erreur}', ['code' => $code, 'erreur' => $e->getMessage()]);
                 continue;
             }
 
             $score = $match->isDomicile() ? $match->getScoreDom() : $match->getScoreExt();
-            $cote = $match->isDomicile() ? 'recevant' : 'visiteur';
-            $autre = $cote === 'recevant' ? 'visiteur' : 'recevant';
-            $somme = fn (array $js) => array_sum(array_column($js, 'buts'));
-            // Feuille où l'ordre des équipes diffère : le total des buts désigne notre côté
-            if ($score !== null && $somme($feuille[$cote]) !== $score && $feuille[$autre] && $somme($feuille[$autre]) === $score) {
-                $cote = $autre;
-            }
+            $cote = self::choisirCote($feuille, (bool) $match->isDomicile(), $score, $nous);
             $nos = $feuille[$cote];
             if (!$nos) {
                 $stats['infos'][] = sprintf('Feuille %s : aucun joueur lu', $code);

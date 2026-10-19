@@ -11,6 +11,9 @@ use Smalot\PdfParser\Parser;
  * « Capt | N° | NOM Prénom | Licence | Type | JFL | Buts | 7m | Tirs | Arrets | Av. | 2' | Dis »
  * puis une ligne par joueur. Les cases vides ne produisent aucun texte : chaque valeur est donc rattachée
  * à sa colonne par sa position horizontale. Les numéros de licence ne sont jamais conservés.
+ *
+ * Noms des deux équipes, quand la feuille les donne : ligne « RECEVANT / VISITEUR » au-dessus des tableaux,
+ * ou lignes « Recevant : … » / « Visiteur : … ». Ils servent à reconnaître notre côté (voir FfhbImporter).
  */
 class FeuilleMatchLecteur
 {
@@ -21,7 +24,7 @@ class FeuilleMatchLecteur
     ];
 
     /**
-     * @return array{recevant: list<array<string, mixed>>, visiteur: list<array<string, mixed>>}
+     * @return array{recevant: list<array<string, mixed>>, visiteur: list<array<string, mixed>>, noms: array{recevant: ?string, visiteur: ?string}}
      *                Joueur : numero, prenom, nom, buts, buts7m, tirs, arrets, exclusions, avertissement, disqualification
      */
     public function lire(string $pdf): array
@@ -54,10 +57,12 @@ class FeuilleMatchLecteur
         krsort($lignes, SORT_NUMERIC); // de haut en bas
 
         $equipes = [];
+        $noms = ['recevant' => null, 'visiteur' => null];
         $colonnes = null;
         $apresOfficiels = false;
         foreach ($lignes as $cases) {
             usort($cases, fn ($a, $b) => $a['x'] <=> $b['x']);
+            self::lireNoms($cases, $noms, $colonnes === null);
             $entete = $this->entete($cases);
             if ($entete) {
                 $colonnes = $entete;
@@ -93,7 +98,39 @@ class FeuilleMatchLecteur
             throw new \RuntimeException(sprintf('tableau des joueurs non reconnu (%d en-tête(s) trouvée(s)). Début de la feuille : « %s »', count($equipes), mb_substr($texte, 0, 400)));
         }
 
-        return ['recevant' => $equipes[0] ?? [], 'visiteur' => $equipes[1] ?? []];
+        return ['recevant' => $equipes[0] ?? [], 'visiteur' => $equipes[1] ?? [], 'noms' => $noms];
+    }
+
+    /**
+     * Noms des équipes : « Recevant : NOM » / « Visiteur : NOM » n'importe où, ou « NOM A / NOM B » avant le premier
+     * tableau (les scores, cases sans lettre, sont ignorés).
+     *
+     * @param list<array{x: float, t: string}>                $cases
+     * @param array{recevant: ?string, visiteur: ?string} $noms
+     */
+    private static function lireNoms(array $cases, array &$noms, bool $avantTableaux): void
+    {
+        $texte = trim(preg_replace('/\s+/u', ' ', implode(' ', array_filter(array_column($cases, 't'), fn ($t) => preg_match('/\p{L}/u', $t)))));
+        if ($texte === '') {
+            return;
+        }
+        if (preg_match('/^(?:club |équipe |equipe )?(recevant|visiteur)e?s?\s*:\s*(.*\p{L}.*)$/iu', $texte, $m)) {
+            $noms[mb_strtolower($m[1])] ??= self::nomEquipe($m[2]);
+
+            return;
+        }
+        if ($avantTableaux && $noms['recevant'] === null && preg_match('#^(.*\p{L}.*?)\s+/\s+(.*\p{L}.*)$#u', $texte, $m)
+            && !preg_match('/\b(code|renc|date|salle|comp[ée]tition|journ[ée]e)\b/iu', $m[1])) {
+            $noms['recevant'] = self::nomEquipe($m[1]);
+            $noms['visiteur'] = self::nomEquipe($m[2]);
+        }
+    }
+
+    private static function nomEquipe(string $nom): ?string
+    {
+        $nom = trim(preg_replace('/^[\s:–-]+|[\s:–-]+$/u', '', $nom));
+
+        return mb_strlen($nom) >= 3 ? mb_substr($nom, 0, 120) : null;
     }
 
     /** Ligne d'en-tête : abscisse de chaque colonne connue, ou null. @return array<string, float>|null */
